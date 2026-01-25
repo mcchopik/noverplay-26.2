@@ -18,7 +18,6 @@ public class NoverplayBackend implements TrackResolver {
 	private final LyricsService lyricsService = new LyricsService();
 	private final SoundCloudService soundCloudService;
 	private final VkService vkService;
-	private final YouTubeStreamResolver youtubeStreamResolver = new YouTubeStreamResolver();
 	private final ExecutorService executor = Executors.newFixedThreadPool(4);
 
 	public NoverplayBackend(AudioPlayerManager playerManager, NoverplayConfig config) {
@@ -71,12 +70,15 @@ public class NoverplayBackend implements TrackResolver {
 		if (track == null) {
 			return null;
 		}
-		if (track.streamUrl() != null && !track.streamUrl().isBlank()) {
+		if (track.service() == ServiceType.YOUTUBE) {
+			String stream = track.streamUrl();
+			if (stream == null || stream.isBlank()) {
+				return track.withStreamUrl("https://www.youtube.com/watch?v=" + track.trackId());
+			}
 			return track;
 		}
-		if (track.service() == ServiceType.YOUTUBE) {
-			TrackInfo resolved = youtubeStreamResolver.resolve(track);
-			return resolved == null ? track : resolved;
+		if (track.streamUrl() != null && !track.streamUrl().isBlank()) {
+			return track;
 		}
 		if (track.service() == ServiceType.VK) {
 			return vkService.refreshTrack(track);
