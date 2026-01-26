@@ -2,8 +2,7 @@ package dev.noverplay.music.client.model;
 
 public enum ServiceType {
 	YOUTUBE("yt", "YouTube"),
-	SOUNDCLOUD("sc", "SoundCloud"),
-	VK("vk", "VK Music");
+	SOUNDCLOUD("sc", "SoundCloud");
 
 	private final String id;
 	private final String label;

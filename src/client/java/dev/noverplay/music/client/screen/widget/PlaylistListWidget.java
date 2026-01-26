@@ -62,6 +62,22 @@ public class PlaylistListWidget extends EntryListWidget<PlaylistListWidget.Playl
 		this.appendDefaultNarrations(builder);
 	}
 
+	private String trimWithEllipsis(String text, int maxWidth) {
+		if (text == null) {
+			return "";
+		}
+		int safeWidth = Math.max(0, maxWidth);
+		if (client.textRenderer.getWidth(text) <= safeWidth) {
+			return text;
+		}
+		int ellipsisWidth = client.textRenderer.getWidth("...");
+		int available = Math.max(0, safeWidth - ellipsisWidth);
+		if (available <= 0) {
+			return client.textRenderer.trimToWidth(text, safeWidth);
+		}
+		return client.textRenderer.trimToWidth(text, available) + "...";
+	}
+
 	public class PlaylistEntry extends EntryListWidget.Entry<PlaylistEntry> {
 		private final PlaylistInfo playlist;
 		private final int index;
@@ -77,12 +93,14 @@ public class PlaylistListWidget extends EntryListWidget<PlaylistListWidget.Playl
 			int yPos = getContentY();
 			int titleColor = 0xFFFFFFFF;
 			int metaColor = 0xFFAAAAAA;
-			context.drawTextWithShadow(client.textRenderer, playlist.title(), x, yPos + 2, titleColor);
-			String author = playlist.author();
-			context.drawTextWithShadow(client.textRenderer, author, x, yPos + 14, metaColor);
 			String count = playlist.trackCount() > 0 ? playlist.trackCount() + " tracks" : "";
-			int width = client.textRenderer.getWidth(count);
-			context.drawTextWithShadow(client.textRenderer, count, getContentRightEnd() - width, yPos + 2, metaColor);
+			int countWidth = client.textRenderer.getWidth(count);
+			int maxWidth = getContentWidth() - countWidth - 15;
+			String titleText = trimWithEllipsis(playlist.title(), maxWidth);
+			String authorText = trimWithEllipsis(playlist.author(), maxWidth);
+			context.drawTextWithShadow(client.textRenderer, titleText, x, yPos + 2, titleColor);
+			context.drawTextWithShadow(client.textRenderer, authorText, x, yPos + 14, metaColor);
+			context.drawTextWithShadow(client.textRenderer, count, getContentRightEnd() - countWidth, yPos + 2, metaColor);
 		}
 
 		@Override

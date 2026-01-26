@@ -24,17 +24,14 @@ public class NoverPlayClient implements ClientModInitializer {
 		DebugLog.init();
 		DebugLog.info("Client init start");
 		NoverplayConfig config = NoverplayConfigManager.get();
-		String vkToken = config.vkAccessToken == null ? "" : config.vkAccessToken;
 		String scToken = config.soundcloudClientId == null ? "" : config.soundcloudClientId;
 		DebugLog.info(
 			"Config loaded: volume=" + config.volume
 				+ " lastService=" + config.lastService
-				+ " vkTokenLen=" + vkToken.length()
-				+ " vkTokenPreview=" + DebugLog.preview(vkToken)
 				+ " scClientLen=" + scToken.length()
 				+ " scClientPreview=" + DebugLog.preview(scToken)
 		);
-		player = new NoverplayPlayer(config.volume);
+		player = new NoverplayPlayer(config);
 		backend = new NoverplayBackend(player.getPlayerManager(), config);
 		player.setResolver(backend);
 		DebugLog.info("Client init complete");

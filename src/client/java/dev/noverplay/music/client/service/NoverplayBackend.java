@@ -19,18 +19,14 @@ public class NoverplayBackend implements TrackResolver {
 	private final Map<ServiceType, MusicService> services = new EnumMap<>(ServiceType.class);
 	private final LyricsService lyricsService = new LyricsService();
 	private final SoundCloudService soundCloudService;
-	private final VkService vkService;
 	private final ExecutorService executor = Executors.newFixedThreadPool(4);
 
 	public NoverplayBackend(AudioPlayerManager playerManager, NoverplayConfig config) {
 		SoundCloudClientIdResolver resolver =
 			new SoundCloudClientIdResolver(config.soundcloudClientId, 21600);
 		this.soundCloudService = new SoundCloudService(resolver);
-		this.vkService = new VkService();
-		this.vkService.setAccessToken(config.vkAccessToken);
 		services.put(ServiceType.YOUTUBE, new YouTubeService(playerManager));
 		services.put(ServiceType.SOUNDCLOUD, soundCloudService);
-		services.put(ServiceType.VK, vkService);
 	}
 
 	public CompletableFuture<SearchResult> searchTracks(ServiceType service, String query, int offset, int limit) {
@@ -79,10 +75,6 @@ public class NoverplayBackend implements TrackResolver {
 		);
 	}
 
-	public void setVkAccessToken(String token) {
-		vkService.setAccessToken(token);
-	}
-
 	public void setSoundCloudClientId(String clientId) {
 		soundCloudService.setClientId(clientId);
 	}
@@ -107,9 +99,6 @@ public class NoverplayBackend implements TrackResolver {
 		}
 		if (track.streamUrl() != null && !track.streamUrl().isBlank()) {
 			return track;
-		}
-		if (track.service() == ServiceType.VK) {
-			return vkService.refreshTrack(track);
 		}
 		if (track.service() == ServiceType.SOUNDCLOUD) {
 			TrackInfo resolved = soundCloudService.resolveTrack(track.trackId());

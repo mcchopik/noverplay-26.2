@@ -74,6 +74,22 @@ public class TrackListWidget extends EntryListWidget<TrackListWidget.TrackEntry>
 		this.appendDefaultNarrations(builder);
 	}
 
+	private String trimWithEllipsis(String text, int maxWidth) {
+		if (text == null) {
+			return "";
+		}
+		int safeWidth = Math.max(0, maxWidth);
+		if (client.textRenderer.getWidth(text) <= safeWidth) {
+			return text;
+		}
+		int ellipsisWidth = client.textRenderer.getWidth("...");
+		int available = Math.max(0, safeWidth - ellipsisWidth);
+		if (available <= 0) {
+			return client.textRenderer.trimToWidth(text, safeWidth);
+		}
+		return client.textRenderer.trimToWidth(text, available) + "...";
+	}
+
 	public class TrackEntry extends EntryListWidget.Entry<TrackEntry> {
 		private final TrackInfo track;
 		private final int index;
@@ -97,11 +113,15 @@ public class TrackListWidget extends EntryListWidget<TrackListWidget.TrackEntry>
 			if (artist == null || artist.isBlank()) {
 				artist = "Unknown artist";
 			}
-			context.drawTextWithShadow(client.textRenderer, title, x, yPos + 2, titleColor);
-			context.drawTextWithShadow(client.textRenderer, artist, x, yPos + 14, metaColor);
 			String duration = track.durationText();
-			int width = client.textRenderer.getWidth(duration);
-			context.drawTextWithShadow(client.textRenderer, duration, getContentRightEnd() - width, yPos + 2, metaColor);
+			int durationWidth = client.textRenderer.getWidth(duration);
+			int durationPad = 25;
+			int maxWidth = getContentWidth() - durationWidth - 15 - durationPad;
+			String titleText = trimWithEllipsis(title, maxWidth);
+			String artistText = trimWithEllipsis(artist, maxWidth);
+			context.drawTextWithShadow(client.textRenderer, titleText, x, yPos + 2, titleColor);
+			context.drawTextWithShadow(client.textRenderer, artistText, x, yPos + 14, metaColor);
+			context.drawTextWithShadow(client.textRenderer, duration, getContentRightEnd() - durationWidth - durationPad, yPos + 2, metaColor);
 		}
 
 		@Override
