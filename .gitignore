@@ -38,3 +38,10 @@ hs_err_*.log
 replay_*.log
 *.hprof
 *.jfr
+
+*.log
+
+Thumbs.db
+desktop.ini
+logs/
+.gradle-cache/

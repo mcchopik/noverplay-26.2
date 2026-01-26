@@ -1,11 +1,15 @@
 package dev.noverplay.music.client.audio;
 
+import com.sedmelluq.discord.lavaplayer.format.AudioDataFormat;
+import com.sedmelluq.discord.lavaplayer.format.Pcm16AudioDataFormat;
+import com.sedmelluq.discord.lavaplayer.player.AudioConfiguration.ResamplingQuality;
 import com.sedmelluq.discord.lavaplayer.player.AudioLoadResultHandler;
 import com.sedmelluq.discord.lavaplayer.player.AudioPlayer;
 import com.sedmelluq.discord.lavaplayer.player.AudioPlayerManager;
 import com.sedmelluq.discord.lavaplayer.player.DefaultAudioPlayerManager;
 import com.sedmelluq.discord.lavaplayer.player.event.AudioEventAdapter;
 import com.sedmelluq.discord.lavaplayer.source.AudioSourceManagers;
+import dev.lavalink.youtube.YoutubeAudioSourceManager;
 import com.sedmelluq.discord.lavaplayer.track.AudioItem;
 import com.sedmelluq.discord.lavaplayer.track.AudioPlaylist;
 import com.sedmelluq.discord.lavaplayer.track.AudioTrack;
@@ -15,6 +19,7 @@ import com.sedmelluq.discord.lavaplayer.tools.FriendlyException;
 import dev.noverplay.music.NoverPlay;
 import dev.noverplay.music.client.model.TrackInfo;
 import dev.noverplay.music.client.service.TrackResolver;
+import dev.noverplay.music.client.util.DebugLog;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -26,6 +31,7 @@ import java.util.concurrent.Executors;
 
 public class NoverplayPlayer {
 	private final AudioPlayerManager playerManager;
+	private final AudioDataFormat audioDataFormat;
 	private final AudioPlayer player;
 	private final LavaplayerAudioOutput output;
 	private final ExecutorService executor = Executors.newSingleThreadExecutor();
@@ -38,13 +44,35 @@ public class NoverplayPlayer {
 
 	public NoverplayPlayer(float initialVolume) {
 		this.playerManager = new DefaultAudioPlayerManager();
-		AudioSourceManagers.registerRemoteSources(playerManager);
-		AudioSourceManagers.registerLocalSource(playerManager);
+		this.audioDataFormat = new Pcm16AudioDataFormat(2, 48000, 960, true);
+		setupPlayerManager();
 		this.player = playerManager.createPlayer();
 		this.player.addListener(new TrackScheduler());
-		this.output = new LavaplayerAudioOutput(player, 48000, 2);
+		this.output = new LavaplayerAudioOutput(player, audioDataFormat);
 		this.output.start();
 		setVolume(initialVolume);
+		DebugLog.info("Player initialized volume=" + initialVolume);
+	}
+
+	private void setupPlayerManager() {
+		playerManager.setFrameBufferDuration(1000);
+		playerManager.setPlayerCleanupThreshold(Long.MAX_VALUE);
+
+		playerManager.getConfiguration().setResamplingQuality(ResamplingQuality.HIGH);
+		playerManager.getConfiguration().setOpusEncodingQuality(10);
+		playerManager.getConfiguration().setOutputFormat(audioDataFormat);
+
+		YoutubeAudioSourceManager youtube = new YoutubeAudioSourceManager();
+		playerManager.registerSourceManager(youtube);
+		AudioSourceManagers.registerRemoteSources(
+			playerManager,
+			com.sedmelluq.discord.lavaplayer.source.youtube.YoutubeAudioSourceManager.class
+		);
+		AudioSourceManagers.registerLocalSource(playerManager);
+		Package pkg = AudioPlayerManager.class.getPackage();
+		String version = pkg == null ? null : pkg.getImplementationVersion();
+		DebugLog.info("Lavaplayer version=" + (version == null ? "<unknown>" : version));
+		DebugLog.info("YouTube manager=" + youtube.getClass().getName());
 	}
 
 	public void setResolver(TrackResolver resolver) {
@@ -75,36 +103,47 @@ public class NoverplayPlayer {
 		executor.execute(() -> {
 			TrackInfo resolved = resolver != null ? resolver.resolve(track) : track;
 			if (resolved == null) {
+				DebugLog.warn("Track resolve returned null");
 				return;
 			}
 			String identifier = resolved.streamUrl();
 			if (identifier == null || identifier.isBlank()) {
+				DebugLog.warn("Track has empty stream url: " + formatTrack(resolved));
 				return;
 			}
+			DebugLog.info("Loading track: " + formatTrack(resolved) + " identifier=" + identifier);
 			playerManager.loadItemOrdered(this, identifier, new AudioLoadResultHandler() {
 				@Override
 				public void trackLoaded(AudioTrack audioTrack) {
+					DebugLog.info("Track loaded: " + formatTrack(resolved)
+						+ " lavaplayer=" + formatTrack(audioTrack));
 					startTrack(audioTrack, resolved);
 				}
 
 				@Override
 				public void playlistLoaded(AudioPlaylist playlist) {
+					DebugLog.info("Playlist loaded name=" + playlist.getName()
+						+ " tracks=" + playlist.getTracks().size()
+						+ " selected=" + formatTrack(playlist.getSelectedTrack()));
 					AudioTrack first = playlist.getSelectedTrack();
 					if (first == null && !playlist.getTracks().isEmpty()) {
 						first = playlist.getTracks().get(0);
 					}
 					if (first != null) {
+						DebugLog.info("Playlist resolved first track: " + formatTrack(first));
 						startTrack(first, resolved);
 					}
 				}
 
 				@Override
 				public void noMatches() {
+					DebugLog.warn("No matches for identifier=" + identifier);
 				}
 
 				@Override
 				public void loadFailed(FriendlyException exception) {
 					NoverPlay.LOGGER.warn("Track load failed", exception);
+					DebugLog.error("Track load failed for identifier=" + identifier, exception);
 				}
 			});
 		});
@@ -114,18 +153,22 @@ public class NoverplayPlayer {
 		currentTrack = trackInfo;
 		player.setPaused(false);
 		player.startTrack(audioTrack, false);
+		DebugLog.info("Start playback: " + formatTrack(trackInfo) + " lavaplayer=" + formatTrack(audioTrack));
 	}
 
 	public void pause() {
 		player.setPaused(true);
+		DebugLog.info("Player paused");
 	}
 
 	public void resume() {
 		player.setPaused(false);
+		DebugLog.info("Player resumed");
 	}
 
 	public void stop() {
 		player.stopTrack();
+		DebugLog.info("Player stopped");
 	}
 
 	public void next() {
@@ -134,6 +177,7 @@ public class NoverplayPlayer {
 			if (currentTrack != null) {
 				history.push(currentTrack);
 			}
+			DebugLog.info("Next track: " + formatTrack(next));
 			play(next);
 		} else {
 			stop();
@@ -143,6 +187,7 @@ public class NoverplayPlayer {
 	public void previous() {
 		TrackInfo prev = history.poll();
 		if (prev != null) {
+			DebugLog.info("Previous track: " + formatTrack(prev));
 			play(prev);
 		}
 	}
@@ -154,12 +199,14 @@ public class NoverplayPlayer {
 		}
 		long position = Math.max(0L, (long) (seconds * 1000L));
 		track.setPosition(position);
+		DebugLog.info("Seek to " + position + "ms");
 	}
 
 	public void setVolume(float volume) {
 		float next = Math.max(0.0f, Math.min(1.0f, volume));
 		this.volume = next;
 		player.setVolume(Math.round(next * 100.0f));
+		DebugLog.info("Volume set " + next);
 	}
 
 	public float getVolume() {
@@ -190,6 +237,30 @@ public class NoverplayPlayer {
 		output.stop();
 		executor.shutdownNow();
 		playerManager.shutdown();
+		DebugLog.info("Player shutdown");
+	}
+
+	private String formatTrack(TrackInfo track) {
+		if (track == null) {
+			return "<null>";
+		}
+		return "id=" + track.trackId()
+			+ " title=" + DebugLog.preview(track.title())
+			+ " artist=" + DebugLog.preview(track.artist())
+			+ " service=" + track.service();
+	}
+
+	private String formatTrack(AudioTrack track) {
+		if (track == null) {
+			return "<null>";
+		}
+		if (track.getInfo() == null) {
+			return "<info null>";
+		}
+		return "id=" + track.getInfo().identifier
+			+ " title=" + DebugLog.preview(track.getInfo().title)
+			+ " author=" + DebugLog.preview(track.getInfo().author)
+			+ " length=" + track.getInfo().length;
 	}
 
 	private class TrackScheduler extends AudioEventAdapter {

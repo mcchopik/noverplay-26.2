@@ -1,5 +1,7 @@
 package dev.noverplay.music.client.audio;
 
+import com.sedmelluq.discord.lavaplayer.format.AudioDataFormat;
+import com.sedmelluq.discord.lavaplayer.format.AudioDataFormatTools;
 import com.sedmelluq.discord.lavaplayer.player.AudioPlayer;
 import com.sedmelluq.discord.lavaplayer.track.playback.AudioFrame;
 import dev.noverplay.music.NoverPlay;
@@ -12,16 +14,14 @@ import javax.sound.sampled.SourceDataLine;
 
 public class LavaplayerAudioOutput implements Runnable {
 	private final AudioPlayer player;
-	private final int sampleRate;
-	private final int channels;
+	private final AudioDataFormat dataFormat;
 	private Thread thread;
 	private volatile boolean running;
 	private SourceDataLine line;
 
-	public LavaplayerAudioOutput(AudioPlayer player, int sampleRate, int channels) {
+	public LavaplayerAudioOutput(AudioPlayer player, AudioDataFormat dataFormat) {
 		this.player = player;
-		this.sampleRate = sampleRate;
-		this.channels = channels;
+		this.dataFormat = dataFormat;
 	}
 
 	public void start() {
@@ -44,11 +44,12 @@ public class LavaplayerAudioOutput implements Runnable {
 
 	@Override
 	public void run() {
-		AudioFormat format = new AudioFormat(sampleRate, 16, channels, true, false);
+		AudioFormat format = AudioDataFormatTools.toAudioFormat(dataFormat);
 		try {
 			DataLine.Info info = new DataLine.Info(SourceDataLine.class, format);
 			line = (SourceDataLine) AudioSystem.getLine(info);
-			line.open(format);
+			int bufferSize = dataFormat.chunkSampleCount * dataFormat.channelCount * 2 * 5;
+			line.open(format, bufferSize);
 			line.start();
 		} catch (LineUnavailableException e) {
 			NoverPlay.LOGGER.error("Audio output unavailable", e);

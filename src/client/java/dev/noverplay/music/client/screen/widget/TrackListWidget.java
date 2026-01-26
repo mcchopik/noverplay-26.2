@@ -1,6 +1,7 @@
 package dev.noverplay.music.client.screen.widget;
 
 import dev.noverplay.music.client.model.TrackInfo;
+import dev.noverplay.music.client.util.DebugLog;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.Click;
@@ -26,6 +27,26 @@ public class TrackListWidget extends EntryListWidget<TrackListWidget.TrackEntry>
 		clearEntries();
 		if (items != null) {
 			tracks.addAll(items);
+		}
+		DebugLog.info("Track list updated count=" + tracks.size());
+		for (int i = 0; i < tracks.size(); i++) {
+			TrackInfo track = tracks.get(i);
+			if (track == null) {
+				continue;
+			}
+			String title = track.title();
+			String artist = track.artist();
+			if (title == null || title.isBlank()) {
+				title = "Unknown title";
+			}
+			if (artist == null || artist.isBlank()) {
+				artist = "Unknown artist";
+			}
+			DebugLog.info("Track list item[" + i + "] id=" + track.trackId()
+				+ " title=" + DebugLog.preview(title)
+				+ " artist=" + DebugLog.preview(artist)
+				+ " duration=" + track.duration()
+				+ " service=" + track.service());
 		}
 		for (int i = 0; i < tracks.size(); i++) {
 			addEntry(new TrackEntry(tracks.get(i), i));
@@ -65,8 +86,8 @@ public class TrackListWidget extends EntryListWidget<TrackListWidget.TrackEntry>
 		@Override
 		public void render(DrawContext context, int index, int y, boolean hovered, float delta) {
 			int x = getRowLeft() + 4;
-			int titleColor = hovered ? 0xFFFFFFFF : 0xFFE0E0E0;
-			int metaColor = hovered ? 0xFFC0C0C0 : 0xFFA0A0A0;
+			int titleColor = 0xFFFFFFFF;
+			int metaColor = 0xFFAAAAAA;
 			String title = track.title();
 			String artist = track.artist();
 			if (title == null || title.isBlank()) {
@@ -75,11 +96,14 @@ public class TrackListWidget extends EntryListWidget<TrackListWidget.TrackEntry>
 			if (artist == null || artist.isBlank()) {
 				artist = "Unknown artist";
 			}
+			context.getMatrices().pushMatrix();
+			context.getMatrices().translate(0.0f, 0.0f);
 			context.drawTextWithShadow(client.textRenderer, title, x, y + 4, titleColor);
 			context.drawTextWithShadow(client.textRenderer, artist, x, y + 16, metaColor);
 			String duration = track.durationText();
 			int width = client.textRenderer.getWidth(duration);
 			context.drawTextWithShadow(client.textRenderer, duration, getRowRight() - width - 6, y + 4, metaColor);
+			context.getMatrices().popMatrix();
 		}
 
 		@Override

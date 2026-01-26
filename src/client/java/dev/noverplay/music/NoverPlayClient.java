@@ -4,6 +4,7 @@ import dev.noverplay.music.client.audio.NoverplayPlayer;
 import dev.noverplay.music.client.config.NoverplayConfig;
 import dev.noverplay.music.client.config.NoverplayConfigManager;
 import dev.noverplay.music.client.service.NoverplayBackend;
+import dev.noverplay.music.client.util.DebugLog;
 import net.fabricmc.api.ClientModInitializer;
 
 public class NoverPlayClient implements ClientModInitializer {
@@ -20,9 +21,22 @@ public class NoverPlayClient implements ClientModInitializer {
 
 	@Override
 	public void onInitializeClient() {
+		DebugLog.init();
+		DebugLog.info("Client init start");
 		NoverplayConfig config = NoverplayConfigManager.get();
+		String vkToken = config.vkAccessToken == null ? "" : config.vkAccessToken;
+		String scToken = config.soundcloudClientId == null ? "" : config.soundcloudClientId;
+		DebugLog.info(
+			"Config loaded: volume=" + config.volume
+				+ " lastService=" + config.lastService
+				+ " vkTokenLen=" + vkToken.length()
+				+ " vkTokenPreview=" + DebugLog.preview(vkToken)
+				+ " scClientLen=" + scToken.length()
+				+ " scClientPreview=" + DebugLog.preview(scToken)
+		);
 		player = new NoverplayPlayer(config.volume);
 		backend = new NoverplayBackend(player.getPlayerManager(), config);
 		player.setResolver(backend);
+		DebugLog.info("Client init complete");
 	}
 }

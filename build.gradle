@@ -1,98 +1,107 @@
 plugins {
-	id 'net.fabricmc.fabric-loom-remap' version "${loom_version}"
-	id 'maven-publish'
+    id 'net.fabricmc.fabric-loom-remap' version "${loom_version}"
+    id 'maven-publish'
 }
 
 version = project.mod_version
 group = project.maven_group
 
 base {
-	archivesName = project.archives_base_name
+    archivesName = project.archives_base_name
 }
 
 repositories {
-	// Add repositories to retrieve artifacts from in here.
-	// You should only use this when depending on other mods because
-	// Loom adds the essential maven repositories to download Minecraft and libraries from automatically.
-	// See https://docs.gradle.org/current/userguide/declaring_repositories.html
-	// for more information about repositories.
-	mavenCentral()
-	maven { url "https://jitpack.io" }
-	maven {
-		name = "lavalink"
-		url = "https://maven.lavalink.dev/releases"
-	}
+    mavenCentral()
+    maven {
+        url "https://m2.dv8tion.net/releases"
+    }
+    maven { url "https://jitpack.io" }
+    
+    // ВАЖНО: Добавил репозиторий для новой библиотеки
+    maven { 
+        name = "lavalink"
+        url = "https://maven.lavalink.dev/releases" 
+    }
 }
 
 loom {
-	splitEnvironmentSourceSets()
+    splitEnvironmentSourceSets()
 
-	mods {
-		"noverplay" {
-			sourceSet sourceSets.main
-			sourceSet sourceSets.client
-		}
-	}
-
+    mods {
+        "noverplay" {
+            sourceSet sourceSets.main
+            sourceSet sourceSets.client
+        }
+    }
 }
 
 dependencies {
-	// To change the versions see the gradle.properties file
-	minecraft "com.mojang:minecraft:${project.minecraft_version}"
-	mappings "net.fabricmc:yarn:${project.yarn_mappings}:v2"
-	modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
+    minecraft "com.mojang:minecraft:${project.minecraft_version}"
+    mappings "net.fabricmc:yarn:${project.yarn_mappings}:v2"
+    modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
+    modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
 
-	// Fabric API. This is technically optional, but you probably want it anyway.
-	modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
+    // ---------------------------------------------------------
+    // УДАЛИ ВСЕ СТРОКИ С "walkyst" !!! ОНИ СЛ ОМАНЫ.
+    // ВСТАВЬ ВМЕСТО НИХ ЭТО:
+    // ---------------------------------------------------------
+    modImplementation "dev.arbjerg:lavaplayer:2.2.6"
+    include "dev.arbjerg:lavaplayer:2.2.6"
+    
+    modImplementation "dev.lavalink.youtube:v2:1.16.0"
+    include "dev.lavalink.youtube:v2:1.16.0"
+    // ---------------------------------------------------------
 
-	modImplementation "dev.arbjerg:lavaplayer:2.2.6"
-	include "dev.arbjerg:lavaplayer:2.2.6"
+    // Остальные либы (slf4j, httpclient) оставь как есть
+    implementation "org.slf4j:slf4j-simple:1.7.36"
+    include "org.slf4j:slf4j-simple:1.7.36"
+    implementation "org.slf4j:jcl-over-slf4j:1.7.36"
+    include "org.slf4j:jcl-over-slf4j:1.7.36"
+    implementation "org.apache.httpcomponents:httpclient:4.5.14"
+    include "org.apache.httpcomponents:httpclient:4.5.14"
+    implementation "org.apache.httpcomponents:httpcore:4.4.16"
+    include "org.apache.httpcomponents:httpcore:4.4.16"
+    implementation "commons-codec:commons-codec:1.15"
+    include "commons-codec:commons-codec:1.15"
+    implementation "commons-io:commons-io:2.11.0"
+    include "commons-io:commons-io:2.11.0"
+    implementation "com.fasterxml.jackson.core:jackson-databind:2.14.2"
+    include "com.fasterxml.jackson.core:jackson-databind:2.14.2"
+    implementation "org.jsoup:jsoup:1.15.4"
+    include "org.jsoup:jsoup:1.15.4"
 }
-
 processResources {
-	inputs.property "version", project.version
-
-	filesMatching("fabric.mod.json") {
-		expand "version": inputs.properties.version
-	}
+    inputs.property "version", project.version
+    filesMatching("fabric.mod.json") {
+        expand "version": inputs.properties.version
+    }
 }
 
 tasks.withType(JavaCompile).configureEach {
-	it.options.release = 21
+    it.options.release = 21
 }
 
 java {
-	// Loom will automatically attach sourcesJar to a RemapSourcesJar task and to the "build" task
-	// if it is present.
-	// If you remove this line, sources will not be generated.
-	withSourcesJar()
-
-	sourceCompatibility = JavaVersion.VERSION_21
-	targetCompatibility = JavaVersion.VERSION_21
+    withSourcesJar()
+    sourceCompatibility = JavaVersion.VERSION_21
+    targetCompatibility = JavaVersion.VERSION_21
 }
 
 jar {
-	inputs.property "archivesName", project.base.archivesName
-
-	from("LICENSE") {
-		rename { "${it}_${inputs.properties.archivesName}"}
-	}
+    inputs.property "archivesName", project.base.archivesName
+    from("LICENSE") {
+        rename { "${it}_${inputs.properties.archivesName}"}
+    }
+    // Добавь это на случай конфликта файлов, о котором ты писал ранее
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE 
 }
 
-// configure the maven publication
 publishing {
-	publications {
-		create("mavenJava", MavenPublication) {
-			artifactId = project.archives_base_name
-			from components.java
-		}
-	}
-
-	// See https://docs.gradle.org/current/userguide/publishing_maven.html for information on how to set up publishing.
-	repositories {
-		// Add repositories to publish to here.
-		// Notice: This block does NOT have the same function as the block in the top level.
-		// The repositories here will be used for publishing your artifact, not for
-		// retrieving dependencies.
-	}
+    publications {
+        create("mavenJava", MavenPublication) {
+            artifactId = project.archives_base_name
+            from components.java
+        }
+    }
+    repositories {}
 }

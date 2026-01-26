@@ -15,6 +15,7 @@ import dev.noverplay.music.client.screen.widget.NoverplaySliderWidget;
 import dev.noverplay.music.client.screen.widget.PlaylistListWidget;
 import dev.noverplay.music.client.screen.widget.TrackListWidget;
 import dev.noverplay.music.client.service.NoverplayBackend;
+import dev.noverplay.music.client.util.DebugLog;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.widget.ButtonWidget;
@@ -123,6 +124,7 @@ public class NoverplayScreen extends Screen {
 		if (client == null) {
 			return;
 		}
+		DebugLog.info("Screen init start width=" + width + " height=" + height);
 		backend = NoverPlayClient.getBackend();
 		player = NoverPlayClient.getPlayer();
 		config = NoverplayConfigManager.get();
@@ -154,6 +156,8 @@ public class NoverplayScreen extends Screen {
 		searchField.setText(searchText);
 		searchField.setMaxLength(256);
 		searchField.setPlaceholder(Text.literal("Search"));
+		searchField.setChangedListener(value ->
+			DebugLog.info("Search input changed len=" + value.length() + " value=" + DebugLog.preview(value)));
 		addDrawableChild(searchField);
 
 		searchButton = ButtonWidget.builder(Text.literal("Search"), button -> performSearch())
@@ -292,12 +296,16 @@ public class NoverplayScreen extends Screen {
 		vkTokenField.setText(vkText);
 		vkTokenField.setMaxLength(2048);
 		vkTokenField.setPlaceholder(Text.literal("VK access token"));
+		vkTokenField.setChangedListener(value ->
+			DebugLog.info("VK token changed len=" + value.length() + " value=" + DebugLog.preview(value)));
 		addDrawableChild(vkTokenField);
 
 		soundcloudField = new TextFieldWidget(textRenderer, rightContentX, scFieldY, controlWidth, fieldHeight, Text.literal("SoundCloud Client ID"));
 		soundcloudField.setText(scText);
 		soundcloudField.setMaxLength(512);
 		soundcloudField.setPlaceholder(Text.literal("SoundCloud client_id"));
+		soundcloudField.setChangedListener(value ->
+			DebugLog.info("SoundCloud client_id changed len=" + value.length() + " value=" + DebugLog.preview(value)));
 		addDrawableChild(soundcloudField);
 
 		int tokenButtonWidth = (controlWidth - ROW_GAP) / 2;
@@ -314,6 +322,7 @@ public class NoverplayScreen extends Screen {
 		updateServiceButtons();
 		updateListVisibility();
 		refreshLoadingState();
+		DebugLog.info("Screen init complete");
 	}
 
 	@Override
@@ -436,9 +445,12 @@ public class NoverplayScreen extends Screen {
 		String query = searchField != null ? searchField.getText().trim() : "";
 		if (query.isBlank()) {
 			statusMessage = "Enter a search query";
+			DebugLog.warn("Search blocked: empty query");
 			return;
 		}
 		loading = true;
+		DebugLog.info("Search start service=" + currentService + " playlists=" + showPlaylists
+			+ " query=" + DebugLog.preview(query));
 		statusMessage = "Searching...";
 		refreshLoadingState();
 		showingPlaylistTracks = false;
@@ -457,6 +469,7 @@ public class NoverplayScreen extends Screen {
 				refreshLoadingState();
 				if (error != null || result == null) {
 					statusMessage = "Search failed";
+					DebugLog.error("Search failed", error);
 					return;
 				}
 				int count = playlistSearch ? result.playlists().size() : result.tracks().size();
@@ -475,6 +488,7 @@ public class NoverplayScreen extends Screen {
 						playlistList.setPlaylists(playlistResults);
 						playlistList.setScrollY(0.0);
 					}
+					DebugLog.info("Search playlists applied count=" + playlistResults.size());
 				} else {
 					trackResults.clear();
 					trackResults.addAll(result.tracks());
@@ -482,6 +496,7 @@ public class NoverplayScreen extends Screen {
 						trackList.setTracks(trackResults);
 						trackList.setScrollY(0.0);
 					}
+					DebugLog.info("Search tracks applied count=" + trackResults.size());
 				}
 				updateListVisibility();
 			});
@@ -496,6 +511,10 @@ public class NoverplayScreen extends Screen {
 		if (source.isEmpty()) {
 			return;
 		}
+		DebugLog.info("Track selected index=" + index
+			+ " title=" + DebugLog.preview(track.title())
+			+ " artist=" + DebugLog.preview(track.artist())
+			+ " service=" + track.service());
 		player.playFromList(source, index);
 		if (showingPlaylistTracks && currentPlaylist != null) {
 			player.setPlaylistTitle(currentPlaylist.title());
@@ -508,6 +527,10 @@ public class NoverplayScreen extends Screen {
 		if (backend == null || playlist == null || loading) {
 			return;
 		}
+		DebugLog.info("Playlist selected index=" + index
+			+ " id=" + DebugLog.preview(playlist.playlistId())
+			+ " title=" + DebugLog.preview(playlist.title())
+			+ " service=" + playlist.service());
 		loading = true;
 		statusMessage = "Loading playlist...";
 		refreshLoadingState();
@@ -523,6 +546,7 @@ public class NoverplayScreen extends Screen {
 				refreshLoadingState();
 				if (error != null || result == null) {
 					statusMessage = "Playlist load failed";
+					DebugLog.error("Playlist load failed", error);
 					return;
 				}
 				playlistTracks.clear();
@@ -531,6 +555,7 @@ public class NoverplayScreen extends Screen {
 				if (trackList != null) {
 					trackList.setTracks(playlistTracks);
 				}
+				DebugLog.info("Playlist tracks applied count=" + playlistTracks.size());
 				if (playlistTracks.isEmpty()) {
 					statusMessage = "Playlist is empty";
 				} else {
@@ -548,8 +573,10 @@ public class NoverplayScreen extends Screen {
 		}
 		PlayerState state = player.snapshot();
 		if (state.playing()) {
+			DebugLog.info("Toggle playback: pause");
 			player.pause();
 		} else {
+			DebugLog.info("Toggle playback: resume");
 			player.resume();
 		}
 	}
@@ -558,6 +585,7 @@ public class NoverplayScreen extends Screen {
 		if (service == null || service == currentService) {
 			return;
 		}
+		DebugLog.info("Service changed from " + currentService + " to " + service);
 		currentService = service;
 		if (config != null) {
 			config.lastService = service.getId();
@@ -569,6 +597,7 @@ public class NoverplayScreen extends Screen {
 		if (showPlaylists == show && !showingPlaylistTracks) {
 			return;
 		}
+		DebugLog.info("Toggle view playlists=" + show);
 		showPlaylists = show;
 		showingPlaylistTracks = false;
 		currentPlaylist = null;
@@ -580,6 +609,7 @@ public class NoverplayScreen extends Screen {
 		if (!showingPlaylistTracks) {
 			return;
 		}
+		DebugLog.info("Exit playlist view");
 		showingPlaylistTracks = false;
 		currentPlaylist = null;
 		updateModeButtons();
@@ -649,6 +679,10 @@ public class NoverplayScreen extends Screen {
 		}
 		String vkToken = vkTokenField != null ? vkTokenField.getText().trim() : "";
 		String scClientId = soundcloudField != null ? soundcloudField.getText().trim() : "";
+		DebugLog.info("Save tokens vkLen=" + vkToken.length()
+			+ " vkPreview=" + DebugLog.preview(vkToken)
+			+ " scLen=" + scClientId.length()
+			+ " scPreview=" + DebugLog.preview(scClientId));
 		config.vkAccessToken = vkToken;
 		config.soundcloudClientId = scClientId;
 		backend.setVkAccessToken(vkToken);
@@ -661,6 +695,7 @@ public class NoverplayScreen extends Screen {
 		if (backend == null || resolvingSoundcloud) {
 			return;
 		}
+		DebugLog.info("Resolve SoundCloud client_id start");
 		resolvingSoundcloud = true;
 		statusMessage = "Resolving SoundCloud client_id...";
 		refreshLoadingState();
@@ -674,8 +709,11 @@ public class NoverplayScreen extends Screen {
 					refreshLoadingState();
 					if (error != null || value == null || value.isBlank()) {
 						statusMessage = "SoundCloud client_id not found";
+						DebugLog.error("Resolve SoundCloud client_id failed", error);
 						return;
 					}
+					DebugLog.info("Resolve SoundCloud client_id success len=" + value.length()
+						+ " preview=" + DebugLog.preview(value));
 					if (soundcloudField != null) {
 						soundcloudField.setText(value);
 					}

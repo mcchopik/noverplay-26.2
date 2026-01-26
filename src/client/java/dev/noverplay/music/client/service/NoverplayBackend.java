@@ -2,10 +2,12 @@ package dev.noverplay.music.client.service;
 
 import com.sedmelluq.discord.lavaplayer.player.AudioPlayerManager;
 import dev.noverplay.music.client.config.NoverplayConfig;
+import dev.noverplay.music.client.model.PlaylistInfo;
 import dev.noverplay.music.client.model.PlaylistTracksResult;
 import dev.noverplay.music.client.model.SearchResult;
 import dev.noverplay.music.client.model.ServiceType;
 import dev.noverplay.music.client.model.TrackInfo;
+import dev.noverplay.music.client.util.DebugLog;
 
 import java.util.EnumMap;
 import java.util.Map;
@@ -32,15 +34,39 @@ public class NoverplayBackend implements TrackResolver {
 	}
 
 	public CompletableFuture<SearchResult> searchTracks(ServiceType service, String query, int offset, int limit) {
-		return CompletableFuture.supplyAsync(() -> getService(service).searchTracks(query, offset, limit), executor);
+		DebugLog.info("Search tracks request service=" + service + " query=" + DebugLog.preview(query)
+			+ " offset=" + offset + " limit=" + limit);
+		return CompletableFuture.supplyAsync(() -> {
+			SearchResult result = getService(service).searchTracks(query, offset, limit);
+			int count = result.tracks() == null ? 0 : result.tracks().size();
+			DebugLog.info("Search tracks result count=" + count + " notice=" + result.notice());
+			logTracks(result.tracks());
+			return result;
+		}, executor);
 	}
 
 	public CompletableFuture<SearchResult> searchPlaylists(ServiceType service, String query, int offset, int limit) {
-		return CompletableFuture.supplyAsync(() -> getService(service).searchPlaylists(query, offset, limit), executor);
+		DebugLog.info("Search playlists request service=" + service + " query=" + DebugLog.preview(query)
+			+ " offset=" + offset + " limit=" + limit);
+		return CompletableFuture.supplyAsync(() -> {
+			SearchResult result = getService(service).searchPlaylists(query, offset, limit);
+			int count = result.playlists() == null ? 0 : result.playlists().size();
+			DebugLog.info("Search playlists result count=" + count + " notice=" + result.notice());
+			logPlaylists(result.playlists());
+			return result;
+		}, executor);
 	}
 
 	public CompletableFuture<PlaylistTracksResult> loadPlaylist(ServiceType service, String id, int offset, int limit) {
-		return CompletableFuture.supplyAsync(() -> getService(service).loadPlaylist(id, offset, limit), executor);
+		DebugLog.info("Load playlist request service=" + service + " id=" + DebugLog.preview(id)
+			+ " offset=" + offset + " limit=" + limit);
+		return CompletableFuture.supplyAsync(() -> {
+			PlaylistTracksResult result = getService(service).loadPlaylist(id, offset, limit);
+			int count = result.tracks() == null ? 0 : result.tracks().size();
+			DebugLog.info("Load playlist result count=" + count + " total=" + result.totalCount());
+			logTracks(result.tracks());
+			return result;
+		}, executor);
 	}
 
 	public CompletableFuture<String> fetchLyrics(TrackInfo track) {
@@ -73,7 +99,9 @@ public class NoverplayBackend implements TrackResolver {
 		if (track.service() == ServiceType.YOUTUBE) {
 			String stream = track.streamUrl();
 			if (stream == null || stream.isBlank()) {
-				return track.withStreamUrl("https://www.youtube.com/watch?v=" + track.trackId());
+				TrackInfo updated = track.withStreamUrl("https://www.youtube.com/watch?v=" + track.trackId());
+				DebugLog.info("Resolved YouTube stream url: " + updated.streamUrl());
+				return updated;
 			}
 			return track;
 		}
@@ -100,5 +128,40 @@ public class NoverplayBackend implements TrackResolver {
 			return resolved;
 		}
 		return services.get(ServiceType.YOUTUBE);
+	}
+
+	private void logTracks(Iterable<TrackInfo> tracks) {
+		if (tracks == null) {
+			return;
+		}
+		int index = 0;
+		for (TrackInfo track : tracks) {
+			if (track == null) {
+				continue;
+			}
+			DebugLog.info("Track[" + index++ + "] id=" + track.trackId()
+				+ " title=" + DebugLog.preview(track.title())
+				+ " artist=" + DebugLog.preview(track.artist())
+				+ " duration=" + track.duration()
+				+ " service=" + track.service()
+				+ " url=" + DebugLog.preview(track.streamUrl()));
+		}
+	}
+
+	private void logPlaylists(Iterable<PlaylistInfo> playlists) {
+		if (playlists == null) {
+			return;
+		}
+		int index = 0;
+		for (PlaylistInfo playlist : playlists) {
+			if (playlist == null) {
+				continue;
+			}
+			DebugLog.info("Playlist[" + index++ + "] id=" + DebugLog.preview(playlist.playlistId())
+				+ " title=" + DebugLog.preview(playlist.title())
+				+ " author=" + DebugLog.preview(playlist.author())
+				+ " tracks=" + playlist.trackCount()
+				+ " service=" + playlist.service());
+		}
 	}
 }

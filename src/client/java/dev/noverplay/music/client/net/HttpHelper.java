@@ -2,6 +2,7 @@ package dev.noverplay.music.client.net;
 
 import com.google.gson.JsonElement;
 import com.google.gson.JsonParser;
+import dev.noverplay.music.client.util.DebugLog;
 
 import java.io.IOException;
 import java.net.URI;
@@ -25,13 +26,23 @@ public final class HttpHelper {
 
 	public static String getText(String url, Map<String, String> params, Map<String, String> headers)
 		throws IOException, InterruptedException {
+		String fullUrl = withParams(url, params);
+		DebugLog.httpRequest("GET", fullUrl, headers);
 		HttpRequest request = HttpRequest.newBuilder()
-			.uri(URI.create(withParams(url, params)))
+			.uri(URI.create(fullUrl))
 			.timeout(Duration.ofSeconds(12))
 			.GET()
 			.headers(flattenHeaders(headers))
 			.build();
-		return CLIENT.send(request, HttpResponse.BodyHandlers.ofString()).body();
+		HttpResponse<String> response;
+		try {
+			response = CLIENT.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+		} catch (IOException | InterruptedException ex) {
+			DebugLog.error("HTTP request failed: " + fullUrl, ex);
+			throw ex;
+		}
+		DebugLog.httpResponse(fullUrl, response.statusCode(), response.headers().map(), response.body());
+		return response.body();
 	}
 
 	public static JsonElement getJson(String url, Map<String, String> params, Map<String, String> headers)
