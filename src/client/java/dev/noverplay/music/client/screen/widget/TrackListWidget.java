@@ -85,7 +85,8 @@ public class TrackListWidget extends EntryListWidget<TrackListWidget.TrackEntry>
 
 		@Override
 		public void render(DrawContext context, int index, int y, boolean hovered, float delta) {
-			int x = getRowLeft() + 4;
+			int x = getContentX();
+			int yPos = getContentY();
 			int titleColor = 0xFFFFFFFF;
 			int metaColor = 0xFFAAAAAA;
 			String title = track.title();
@@ -96,14 +97,11 @@ public class TrackListWidget extends EntryListWidget<TrackListWidget.TrackEntry>
 			if (artist == null || artist.isBlank()) {
 				artist = "Unknown artist";
 			}
-			context.getMatrices().pushMatrix();
-			context.getMatrices().translate(0.0f, 0.0f);
-			context.drawTextWithShadow(client.textRenderer, title, x, y + 4, titleColor);
-			context.drawTextWithShadow(client.textRenderer, artist, x, y + 16, metaColor);
+			context.drawTextWithShadow(client.textRenderer, title, x, yPos + 2, titleColor);
+			context.drawTextWithShadow(client.textRenderer, artist, x, yPos + 14, metaColor);
 			String duration = track.durationText();
 			int width = client.textRenderer.getWidth(duration);
-			context.drawTextWithShadow(client.textRenderer, duration, getRowRight() - width - 6, y + 4, metaColor);
-			context.getMatrices().popMatrix();
+			context.drawTextWithShadow(client.textRenderer, duration, getContentRightEnd() - width, yPos + 2, metaColor);
 		}
 
 		@Override

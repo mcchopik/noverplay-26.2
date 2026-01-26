@@ -73,18 +73,16 @@ public class PlaylistListWidget extends EntryListWidget<PlaylistListWidget.Playl
 
 		@Override
 		public void render(DrawContext context, int index, int y, boolean hovered, float delta) {
-			int x = getRowLeft() + 4;
+			int x = getContentX();
+			int yPos = getContentY();
 			int titleColor = 0xFFFFFFFF;
 			int metaColor = 0xFFAAAAAA;
-			context.getMatrices().pushMatrix();
-			context.getMatrices().translate(0.0f, 0.0f);
-			context.drawTextWithShadow(client.textRenderer, playlist.title(), x, y + 4, titleColor);
+			context.drawTextWithShadow(client.textRenderer, playlist.title(), x, yPos + 2, titleColor);
 			String author = playlist.author();
-			context.drawTextWithShadow(client.textRenderer, author, x, y + 16, metaColor);
+			context.drawTextWithShadow(client.textRenderer, author, x, yPos + 14, metaColor);
 			String count = playlist.trackCount() > 0 ? playlist.trackCount() + " tracks" : "";
 			int width = client.textRenderer.getWidth(count);
-			context.drawTextWithShadow(client.textRenderer, count, getRowRight() - width - 6, y + 4, metaColor);
-			context.getMatrices().popMatrix();
+			context.drawTextWithShadow(client.textRenderer, count, getContentRightEnd() - width, yPos + 2, metaColor);
 		}
 
 		@Override
