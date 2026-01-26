@@ -2,24 +2,21 @@ package dev.noverplay.music.client.audio;
 
 import com.sedmelluq.discord.lavaplayer.format.AudioDataFormat;
 import com.sedmelluq.discord.lavaplayer.format.AudioDataFormatTools;
+import com.sedmelluq.discord.lavaplayer.format.AudioPlayerInputStream;
 import com.sedmelluq.discord.lavaplayer.player.AudioPlayer;
-import com.sedmelluq.discord.lavaplayer.track.playback.MutableAudioFrame;
 import dev.noverplay.music.NoverPlay;
 import dev.noverplay.music.client.util.DebugLog;
 
 import javax.sound.sampled.AudioFormat;
+import javax.sound.sampled.AudioInputStream;
 import javax.sound.sampled.AudioSystem;
 import javax.sound.sampled.DataLine;
 import javax.sound.sampled.LineUnavailableException;
 import javax.sound.sampled.SourceDataLine;
-import java.nio.ByteBuffer;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
+import java.io.InterruptedIOException;
 
 public class LavaplayerAudioOutput implements Runnable {
-	private static final int FRAME_TIMEOUT_MS = 500;
-	private static final int BUFFER_FRAMES = 250;
-	private static final long STARVED_LOG_MS = 1000L;
+	private static final int LINE_BUFFER_FRAMES = 5;
 
 	private final AudioPlayer player;
 	private final AudioDataFormat dataFormat;
@@ -54,54 +51,70 @@ public class LavaplayerAudioOutput implements Runnable {
 	@Override
 	public void run() {
 		AudioFormat format = AudioDataFormatTools.toAudioFormat(dataFormat);
-		try {
-			DataLine.Info info = new DataLine.Info(SourceDataLine.class, format);
-			line = (SourceDataLine) AudioSystem.getLine(info);
-			int bufferSize = dataFormat.maximumChunkSize() * BUFFER_FRAMES;
-			line.open(format, bufferSize);
-			line.start();
-		} catch (LineUnavailableException e) {
-			NoverPlay.LOGGER.error("Audio output unavailable", e);
-			running = false;
-			return;
-		}
-
-		byte[] buffer = new byte[dataFormat.maximumChunkSize()];
-		byte[] silence = new byte[dataFormat.maximumChunkSize()];
-		MutableAudioFrame frame = new MutableAudioFrame(ByteBuffer.wrap(buffer));
-		long lastFrameAt = System.currentTimeMillis();
-		long lastStarvedLogAt = lastFrameAt;
+		DataLine.Info info = new DataLine.Info(SourceDataLine.class, format);
+		AudioInputStream stream = AudioPlayerInputStream.createStream(
+			player,
+			dataFormat,
+			dataFormat.frameDuration(),
+			false
+		);
+		byte[] buffer = new byte[dataFormat.chunkSampleCount * dataFormat.channelCount * 2];
+		long frameDuration = dataFormat.frameDuration();
 
 		while (running) {
 			try {
-				boolean provided = player.provide(frame, FRAME_TIMEOUT_MS, TimeUnit.MILLISECONDS);
-				if (!provided) {
-					long now = System.currentTimeMillis();
-					if (now - lastStarvedLogAt >= STARVED_LOG_MS) {
-						long delta = now - lastFrameAt;
-						NoverPlay.LOGGER.warn("Audio output starved for {}ms", delta);
-						DebugLog.warn("Audio output starved for " + delta + "ms");
-						lastStarvedLogAt = now;
+				if (line == null || !line.isOpen()) {
+					closeLine();
+					if (!openLine(info, format)) {
+						sleepQuiet(500);
+						continue;
 					}
-					if (line != null && line.available() >= silence.length) {
-						line.write(silence, 0, silence.length);
+				}
+				if (!player.isPaused()) {
+					int chunkSize = stream.read(buffer, 0, buffer.length);
+					if (chunkSize >= 0) {
+						line.write(buffer, 0, chunkSize);
+					} else {
+						throw new IllegalStateException("Audio stream ended.");
 					}
+				} else {
+					line.drain();
+					sleepQuiet(frameDuration);
 					continue;
 				}
-				lastFrameAt = System.currentTimeMillis();
-				lastStarvedLogAt = lastFrameAt;
-				int length = frame.getDataLength();
-				if (length > 0) {
-					line.write(buffer, 0, length);
-				}
-			} catch (TimeoutException ignored) {
-			} catch (InterruptedException ignored) {
+			} catch (InterruptedIOException ignored) {
 				Thread.currentThread().interrupt();
+				break;
 			} catch (Exception ex) {
 				NoverPlay.LOGGER.warn("Audio output error", ex);
+				DebugLog.error("Audio output error", ex);
+				sleepQuiet(100);
 			}
 		}
 		closeLine();
+	}
+
+	private boolean openLine(DataLine.Info info, AudioFormat format) {
+		try {
+			line = (SourceDataLine) AudioSystem.getLine(info);
+			int bufferSize = dataFormat.chunkSampleCount * dataFormat.channelCount * 2 * LINE_BUFFER_FRAMES;
+			line.open(format, bufferSize);
+			line.start();
+			return true;
+		} catch (LineUnavailableException e) {
+			NoverPlay.LOGGER.error("Audio output unavailable", e);
+			DebugLog.error("Audio output unavailable", e);
+			return false;
+		}
+	}
+
+	private void sleepQuiet(long millis) {
+		try {
+			Thread.sleep(millis);
+		} catch (InterruptedException ignored) {
+			Thread.currentThread().interrupt();
+			running = false;
+		}
 	}
 
 	private void closeLine() {

@@ -1,7 +1,6 @@
 package dev.noverplay.music.client.service;
 
 import com.sedmelluq.discord.lavaplayer.player.AudioPlayerManager;
-import dev.noverplay.music.client.config.NoverplayConfig;
 import dev.noverplay.music.client.model.PlaylistInfo;
 import dev.noverplay.music.client.model.PlaylistTracksResult;
 import dev.noverplay.music.client.model.SearchResult;
@@ -18,15 +17,10 @@ import java.util.concurrent.Executors;
 public class NoverplayBackend implements TrackResolver {
 	private final Map<ServiceType, MusicService> services = new EnumMap<>(ServiceType.class);
 	private final LyricsService lyricsService = new LyricsService();
-	private final SoundCloudService soundCloudService;
 	private final ExecutorService executor = Executors.newFixedThreadPool(4);
 
-	public NoverplayBackend(AudioPlayerManager playerManager, NoverplayConfig config) {
-		SoundCloudClientIdResolver resolver =
-			new SoundCloudClientIdResolver(config.soundcloudClientId, 21600);
-		this.soundCloudService = new SoundCloudService(resolver);
+	public NoverplayBackend(AudioPlayerManager playerManager) {
 		services.put(ServiceType.YOUTUBE, new YouTubeService(playerManager));
-		services.put(ServiceType.SOUNDCLOUD, soundCloudService);
 	}
 
 	public CompletableFuture<SearchResult> searchTracks(ServiceType service, String query, int offset, int limit) {
@@ -75,14 +69,6 @@ public class NoverplayBackend implements TrackResolver {
 		);
 	}
 
-	public void setSoundCloudClientId(String clientId) {
-		soundCloudService.setClientId(clientId);
-	}
-
-	public String resolveSoundCloudClientId() {
-		return soundCloudService.resolveClientId();
-	}
-
 	@Override
 	public TrackInfo resolve(TrackInfo track) {
 		if (track == null) {
@@ -99,10 +85,6 @@ public class NoverplayBackend implements TrackResolver {
 		}
 		if (track.streamUrl() != null && !track.streamUrl().isBlank()) {
 			return track;
-		}
-		if (track.service() == ServiceType.SOUNDCLOUD) {
-			TrackInfo resolved = soundCloudService.resolveTrack(track.trackId());
-			return resolved == null ? track : resolved;
 		}
 		return track;
 	}

@@ -47,9 +47,21 @@ dependencies {
     // ---------------------------------------------------------
     modImplementation "dev.arbjerg:lavaplayer:2.2.6"
     include "dev.arbjerg:lavaplayer:2.2.6"
+    modImplementation "dev.arbjerg:lava-common:2.2.6"
+    include "dev.arbjerg:lava-common:2.2.6"
+    modImplementation "dev.arbjerg:lavaplayer-natives:2.2.6"
+    include "dev.arbjerg:lavaplayer-natives:2.2.6"
     
+    modImplementation "dev.lavalink.youtube:common:1.16.0"
+    include "dev.lavalink.youtube:common:1.16.0"
     modImplementation "dev.lavalink.youtube:v2:1.16.0"
     include "dev.lavalink.youtube:v2:1.16.0"
+    modImplementation "org.mozilla:rhino-engine:1.7.15"
+    include "org.mozilla:rhino-engine:1.7.15"
+    modImplementation "org.mozilla:rhino:1.7.15"
+    include "org.mozilla:rhino:1.7.15"
+    modImplementation "com.grack:nanojson:1.7"
+    include "com.grack:nanojson:1.7"
     // ---------------------------------------------------------
 
     // Остальные либы (slf4j, httpclient) оставь как есть
@@ -67,6 +79,10 @@ dependencies {
     include "commons-io:commons-io:2.11.0"
     implementation "com.fasterxml.jackson.core:jackson-databind:2.14.2"
     include "com.fasterxml.jackson.core:jackson-databind:2.14.2"
+    implementation "com.fasterxml.jackson.core:jackson-core:2.14.2"
+    include "com.fasterxml.jackson.core:jackson-core:2.14.2"
+    implementation "com.fasterxml.jackson.core:jackson-annotations:2.14.2"
+    include "com.fasterxml.jackson.core:jackson-annotations:2.14.2"
     implementation "org.jsoup:jsoup:1.15.4"
     include "org.jsoup:jsoup:1.15.4"
 }
@@ -79,6 +95,14 @@ processResources {
 
 tasks.withType(JavaCompile).configureEach {
     it.options.release = 21
+}
+
+tasks.register("runStandaloneDebugger", JavaExec) {
+    group = "application"
+    description = "Run StandaloneDebugger without Minecraft"
+    dependsOn("classes", "compileClientJava")
+    classpath = sourceSets.main.runtimeClasspath + sourceSets.client.runtimeClasspath
+    mainClass.set("dev.noverplay.music.client.StandaloneDebugger")
 }
 
 java {

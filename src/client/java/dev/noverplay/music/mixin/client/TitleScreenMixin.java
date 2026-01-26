@@ -1,7 +1,7 @@
 package dev.noverplay.music.mixin.client;
 
 import dev.noverplay.music.NoverPlay;
-import dev.noverplay.music.client.screen.NoverplayScreen;
+import dev.noverplay.music.NoverPlayClient;
 import dev.noverplay.music.client.widget.NoverplayIconButton;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.screen.Screen;
@@ -29,7 +29,7 @@ public abstract class TitleScreenMixin extends Screen {
 		int y = margin;
 		this.addDrawableChild(new NoverplayIconButton(x, y, size, size, LOGO_TEXTURE, () -> {
 			MinecraftClient client = MinecraftClient.getInstance();
-			client.setScreen(new NoverplayScreen(this));
+			NoverPlayClient.openNoverplayScreen(client);
 		}));
 	}
 }

@@ -49,7 +49,6 @@ public class NoverplayScreen extends Screen {
 	private boolean showPlaylists;
 	private boolean showingPlaylistTracks;
 	private boolean loading;
-	private boolean resolvingSoundcloud;
 	private String statusMessage = "";
 
 	private TextFieldWidget searchField;
@@ -60,8 +59,6 @@ public class NoverplayScreen extends Screen {
 	private ButtonWidget playlistsButton;
 	private ButtonWidget backButton;
 
-	private ButtonWidget youtubeButton;
-	private ButtonWidget soundcloudButton;
 
 	private TrackListWidget trackList;
 	private PlaylistListWidget playlistList;
@@ -74,11 +71,6 @@ public class NoverplayScreen extends Screen {
 
 	private NoverplaySliderWidget progressSlider;
 	private NoverplaySliderWidget volumeSlider;
-
-	private TextFieldWidget soundcloudField;
-	private ButtonWidget saveTokensButton;
-	private ButtonWidget resolveSoundcloudButton;
-	private ButtonWidget soundcloudResetButton;
 
 	private final List<TrackInfo> trackResults = new ArrayList<>();
 	private final List<PlaylistInfo> playlistResults = new ArrayList<>();
@@ -107,9 +99,6 @@ public class NoverplayScreen extends Screen {
 	private int controlsY;
 	private int volumeLabelY;
 	private int volumeSliderY;
-	private int scLabelY;
-	private int scFieldY;
-	private int tokenButtonsY;
 
 	public NoverplayScreen(Screen parent) {
 		super(Text.literal("Noverplay"));
@@ -128,7 +117,6 @@ public class NoverplayScreen extends Screen {
 		currentService = ServiceType.fromId(config.lastService);
 
 		String searchText = searchField != null ? searchField.getText() : "";
-		String scText = soundcloudField != null ? soundcloudField.getText() : config.soundcloudClientId;
 
 		clearChildren();
 		trackListAdded = false;
@@ -161,18 +149,7 @@ public class NoverplayScreen extends Screen {
 			.build();
 		addDrawableChild(searchButton);
 
-		int serviceY = searchY + ROW_HEIGHT + ROW_GAP;
-		int serviceButtonWidth = (leftWidth - ROW_GAP) / 2;
-		youtubeButton = ButtonWidget.builder(Text.literal("YouTube"), button -> setService(ServiceType.YOUTUBE))
-			.dimensions(leftX, serviceY, serviceButtonWidth, ROW_HEIGHT)
-			.build();
-		soundcloudButton = ButtonWidget.builder(Text.literal("SoundCloud"), button -> setService(ServiceType.SOUNDCLOUD))
-			.dimensions(leftX + serviceButtonWidth + ROW_GAP, serviceY, serviceButtonWidth, ROW_HEIGHT)
-			.build();
-		addDrawableChild(youtubeButton);
-		addDrawableChild(soundcloudButton);
-
-		int modeY = serviceY + ROW_HEIGHT + ROW_GAP;
+		int modeY = searchY + ROW_HEIGHT + ROW_GAP;
 		int backWidth = 60;
 		int toggleWidth = Math.max(60, (leftWidth - backWidth - ROW_GAP * 2) / 2);
 		int backX = leftX + toggleWidth * 2 + ROW_GAP * 2;
@@ -208,11 +185,8 @@ public class NoverplayScreen extends Screen {
 
 		int rightPadding = 6;
 		int sliderHeight = 16;
-		int fieldHeight = 18;
 		int rightContentX = rightX + rightPadding;
 		int controlWidth = rightWidth - rightPadding * 2;
-		int resetButtonWidth = 50;
-		int tokenFieldWidth = Math.max(80, controlWidth - resetButtonWidth - ROW_GAP);
 
 		nowPlayingY = contentTop + 4;
 		titleY = nowPlayingY + textRenderer.fontHeight + 2;
@@ -222,9 +196,6 @@ public class NoverplayScreen extends Screen {
 		controlsY = timeY + textRenderer.fontHeight + 6;
 		volumeLabelY = controlsY + ROW_HEIGHT + 6;
 		volumeSliderY = volumeLabelY + textRenderer.fontHeight + 2;
-		scLabelY = volumeSliderY + sliderHeight + 8;
-		scFieldY = scLabelY + textRenderer.fontHeight + 2;
-		tokenButtonsY = scFieldY + fieldHeight + 6;
 
 		progressSlider = new NoverplaySliderWidget(rightContentX, progressY, controlWidth, sliderHeight, Text.literal("Progress"), 0.0) {
 			@Override
@@ -284,30 +255,7 @@ public class NoverplayScreen extends Screen {
 		};
 		addDrawableChild(volumeSlider);
 
-		soundcloudField = new TextFieldWidget(textRenderer, rightContentX, scFieldY, tokenFieldWidth, fieldHeight, Text.literal("SoundCloud Client ID"));
-		soundcloudField.setText(scText);
-		soundcloudField.setMaxLength(512);
-		soundcloudField.setPlaceholder(Text.literal("SoundCloud client_id"));
-		soundcloudField.setChangedListener(value ->
-			DebugLog.info("SoundCloud client_id changed len=" + value.length() + " value=" + DebugLog.preview(value)));
-		addDrawableChild(soundcloudField);
-		soundcloudResetButton = ButtonWidget.builder(Text.literal("Reset"), button -> clearSoundcloudToken())
-			.dimensions(rightContentX + tokenFieldWidth + ROW_GAP, scFieldY, resetButtonWidth, fieldHeight)
-			.build();
-		addDrawableChild(soundcloudResetButton);
-
-		int tokenButtonWidth = (controlWidth - ROW_GAP) / 2;
-		saveTokensButton = ButtonWidget.builder(Text.literal("Save"), button -> saveTokens())
-			.dimensions(rightContentX, tokenButtonsY, tokenButtonWidth, ROW_HEIGHT)
-			.build();
-		resolveSoundcloudButton = ButtonWidget.builder(Text.literal("Auto"), button -> resolveSoundcloudId())
-			.dimensions(rightContentX + tokenButtonWidth + ROW_GAP, tokenButtonsY, tokenButtonWidth, ROW_HEIGHT)
-			.build();
-		addDrawableChild(saveTokensButton);
-		addDrawableChild(resolveSoundcloudButton);
-
 		updateModeButtons();
-		updateServiceButtons();
 		updateListVisibility();
 		refreshLoadingState();
 		DebugLog.info("Screen init complete");
@@ -404,7 +352,6 @@ public class NoverplayScreen extends Screen {
 		context.drawTextWithShadow(textRenderer, durationText, rightX + rightWidth - durationWidth - 6, timeY, 0xFF8B94A0);
 
 		context.drawTextWithShadow(textRenderer, "Volume", rightX + 6, volumeLabelY, 0xFF9AA3AE);
-		context.drawTextWithShadow(textRenderer, "SoundCloud Client ID", rightX + 6, scLabelY, 0xFF9AA3AE);
 	}
 
 	private void updatePlaybackWidgets(PlayerState state) {
@@ -568,18 +515,6 @@ public class NoverplayScreen extends Screen {
 		}
 	}
 
-	private void setService(ServiceType service) {
-		if (service == null || service == currentService) {
-			return;
-		}
-		DebugLog.info("Service changed from " + currentService + " to " + service);
-		currentService = service;
-		if (config != null) {
-			config.lastService = service.getId();
-		}
-		updateServiceButtons();
-	}
-
 	private void setShowPlaylists(boolean show) {
 		if (showPlaylists == show && !showingPlaylistTracks) {
 			return;
@@ -601,15 +536,6 @@ public class NoverplayScreen extends Screen {
 		currentPlaylist = null;
 		updateModeButtons();
 		updateListVisibility();
-	}
-
-	private void updateServiceButtons() {
-		if (youtubeButton != null) {
-			youtubeButton.active = currentService != ServiceType.YOUTUBE;
-		}
-		if (soundcloudButton != null) {
-			soundcloudButton.active = currentService != ServiceType.SOUNDCLOUD;
-		}
 	}
 
 	private void updateModeButtons() {
@@ -652,82 +578,6 @@ public class NoverplayScreen extends Screen {
 		if (searchButton != null) {
 			searchButton.active = !loading;
 		}
-		if (resolveSoundcloudButton != null) {
-			resolveSoundcloudButton.active = !resolvingSoundcloud;
-		}
-	}
-
-	private void saveTokens() {
-		if (config == null || backend == null) {
-			return;
-		}
-		String scClientId = soundcloudField != null ? soundcloudField.getText().trim() : "";
-		DebugLog.info("Save SoundCloud client_id len=" + scClientId.length()
-			+ " preview=" + DebugLog.preview(scClientId));
-		config.soundcloudClientId = scClientId;
-		backend.setSoundCloudClientId(scClientId);
-		NoverplayConfigManager.save();
-		statusMessage = "Tokens saved";
-	}
-
-	private void clearSoundcloudToken() {
-		if (config != null) {
-			config.soundcloudClientId = "";
-		}
-		if (backend != null) {
-			backend.setSoundCloudClientId("");
-		}
-		if (soundcloudField != null) {
-			soundcloudField.setText("");
-		}
-		NoverplayConfigManager.save();
-		DebugLog.info("SoundCloud client_id cleared");
-		announceTokenCleared();
-	}
-
-	private void announceTokenCleared() {
-		statusMessage = "Token cleared";
-		if (client != null && client.player != null) {
-			client.player.sendMessage(Text.literal("Token cleared"), false);
-		}
-	}
-
-	private void resolveSoundcloudId() {
-		if (backend == null || resolvingSoundcloud) {
-			return;
-		}
-		DebugLog.info("Resolve SoundCloud client_id start");
-		resolvingSoundcloud = true;
-		statusMessage = "Resolving SoundCloud client_id...";
-		refreshLoadingState();
-		CompletableFuture.supplyAsync(backend::resolveSoundCloudClientId)
-			.whenComplete((value, error) -> {
-				if (client == null) {
-					return;
-				}
-				client.execute(() -> {
-					resolvingSoundcloud = false;
-					refreshLoadingState();
-					if (error != null || value == null || value.isBlank()) {
-						statusMessage = "SoundCloud client_id not found";
-						DebugLog.error("Resolve SoundCloud client_id failed", error);
-						return;
-					}
-					DebugLog.info("Resolve SoundCloud client_id success len=" + value.length()
-						+ " preview=" + DebugLog.preview(value));
-					if (soundcloudField != null) {
-						soundcloudField.setText(value);
-					}
-					if (config != null) {
-						config.soundcloudClientId = value;
-					}
-					if (backend != null) {
-						backend.setSoundCloudClientId(value);
-					}
-					NoverplayConfigManager.save();
-					statusMessage = "SoundCloud client_id updated";
-				});
-			});
 	}
 
 	private void persistConfig() {

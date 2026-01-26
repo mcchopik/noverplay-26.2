@@ -9,11 +9,7 @@ import com.sedmelluq.discord.lavaplayer.player.AudioPlayerManager;
 import com.sedmelluq.discord.lavaplayer.player.DefaultAudioPlayerManager;
 import com.sedmelluq.discord.lavaplayer.player.event.AudioEventAdapter;
 import com.sedmelluq.discord.lavaplayer.source.AudioSourceManagers;
-import com.sedmelluq.discord.lavaplayer.source.soundcloud.DefaultSoundCloudFormatHandler;
-import com.sedmelluq.discord.lavaplayer.source.soundcloud.SoundCloudFormatHandler;
-import com.sedmelluq.discord.lavaplayer.source.soundcloud.SoundCloudTrackFormat;
 import dev.lavalink.youtube.YoutubeAudioSourceManager;
-import com.sedmelluq.discord.lavaplayer.track.AudioItem;
 import com.sedmelluq.discord.lavaplayer.track.AudioPlaylist;
 import com.sedmelluq.discord.lavaplayer.track.AudioTrack;
 import com.sedmelluq.discord.lavaplayer.track.AudioTrackEndReason;
@@ -34,12 +30,11 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public class NoverplayPlayer {
-	private static final int FRAME_BUFFER_MS = 5000;
+	private static final int FRAME_BUFFER_MS = 1000;
 	private final AudioPlayerManager playerManager;
 	private final AudioDataFormat audioDataFormat;
 	private final AudioPlayer player;
 	private final LavaplayerAudioOutput output;
-	private final String soundcloudClientId;
 	private final ExecutorService executor = Executors.newSingleThreadExecutor();
 	private final Queue<TrackInfo> queue = new ArrayDeque<>();
 	private final Deque<TrackInfo> history = new ArrayDeque<>();
@@ -49,9 +44,9 @@ public class NoverplayPlayer {
 	private TrackResolver resolver;
 
 	public NoverplayPlayer(NoverplayConfig config) {
+		System.setProperty("java.net.preferIPv4Stack", "true");
 		this.playerManager = new DefaultAudioPlayerManager();
 		this.audioDataFormat = new Pcm16AudioDataFormat(2, 48000, 960, true);
-		this.soundcloudClientId = config == null ? "" : safe(config.soundcloudClientId);
 		setupPlayerManager();
 		this.player = playerManager.createPlayer();
 		player.setFrameBufferDuration(FRAME_BUFFER_MS);
@@ -73,135 +68,15 @@ public class NoverplayPlayer {
 
 		YoutubeAudioSourceManager youtube = new YoutubeAudioSourceManager();
 		playerManager.registerSourceManager(youtube);
-		registerSoundCloud();
 		AudioSourceManagers.registerRemoteSources(
 			playerManager,
-			com.sedmelluq.discord.lavaplayer.source.youtube.YoutubeAudioSourceManager.class,
-			com.sedmelluq.discord.lavaplayer.source.soundcloud.SoundCloudAudioSourceManager.class
+			com.sedmelluq.discord.lavaplayer.source.youtube.YoutubeAudioSourceManager.class
 		);
 		AudioSourceManagers.registerLocalSource(playerManager);
 		Package pkg = AudioPlayerManager.class.getPackage();
 		String version = pkg == null ? null : pkg.getImplementationVersion();
 		DebugLog.info("Lavaplayer version=" + (version == null ? "<unknown>" : version));
 		DebugLog.info("YouTube manager=" + youtube.getClass().getName());
-	}
-
-	private void registerSoundCloud() {
-		com.sedmelluq.discord.lavaplayer.source.soundcloud.SoundCloudAudioSourceManager manager =
-			com.sedmelluq.discord.lavaplayer.source.soundcloud.SoundCloudAudioSourceManager.builder()
-				.withFormatHandler(createSoundCloudFormatHandler())
-				.build();
-		if (!soundcloudClientId.isBlank()) {
-			boolean applied = applySoundCloudClientId(manager, soundcloudClientId);
-			DebugLog.info("SoundCloud client_id provided len=" + soundcloudClientId.length()
-				+ " applied=" + applied);
-		}
-		playerManager.registerSourceManager(manager);
-	}
-
-	private SoundCloudFormatHandler createSoundCloudFormatHandler() {
-		DefaultSoundCloudFormatHandler fallback = new DefaultSoundCloudFormatHandler();
-		return new SoundCloudFormatHandler() {
-			@Override
-			public SoundCloudTrackFormat chooseBestFormat(List<SoundCloudTrackFormat> formats) {
-				SoundCloudTrackFormat selected = pickPreferredFormat(formats);
-				if (selected == null) {
-					selected = fallback.chooseBestFormat(formats);
-				}
-				if (selected != null) {
-					DebugLog.info("SoundCloud format selected protocol=" + selected.getProtocol()
-						+ " mime=" + selected.getMimeType());
-				}
-				return selected;
-			}
-
-			@Override
-			public String buildFormatIdentifier(SoundCloudTrackFormat format) {
-				return fallback.buildFormatIdentifier(format);
-			}
-
-			@Override
-			public com.sedmelluq.discord.lavaplayer.source.soundcloud.SoundCloudM3uInfo getM3uInfo(String identifier) {
-				return fallback.getM3uInfo(identifier);
-			}
-
-			@Override
-			public String getMp3LookupUrl(String trackId) {
-				return fallback.getMp3LookupUrl(trackId);
-			}
-		};
-	}
-
-	private SoundCloudTrackFormat pickPreferredFormat(List<SoundCloudTrackFormat> formats) {
-		SoundCloudTrackFormat match = pickFormat(formats, true, true);
-		if (match != null) {
-			return match;
-		}
-		match = pickFormat(formats, true, false);
-		if (match != null) {
-			return match;
-		}
-		return pickFormat(formats, false, true);
-	}
-
-	private SoundCloudTrackFormat pickFormat(
-		List<SoundCloudTrackFormat> formats,
-		boolean progressiveOnly,
-		boolean mp3Only
-	) {
-		if (formats == null) {
-			return null;
-		}
-		for (SoundCloudTrackFormat format : formats) {
-			if (format == null) {
-				continue;
-			}
-			String protocol = format.getProtocol();
-			if (progressiveOnly && (protocol == null || !protocol.equalsIgnoreCase("progressive"))) {
-				continue;
-			}
-			String mime = format.getMimeType();
-			if (mp3Only && (mime == null || (!mime.toLowerCase().contains("mpeg") && !mime.toLowerCase().contains("mp3")))) {
-				continue;
-			}
-			return format;
-		}
-		return null;
-	}
-
-	private boolean applySoundCloudClientId(
-		com.sedmelluq.discord.lavaplayer.source.soundcloud.SoundCloudAudioSourceManager manager,
-		String clientId
-	) {
-		try {
-			// Lavaplayer doesn't expose a setter, so update the internal tracker.
-			java.lang.reflect.Field trackerField = manager.getClass().getDeclaredField("clientIdTracker");
-			trackerField.setAccessible(true);
-			Object tracker = trackerField.get(manager);
-			if (tracker == null) {
-				return false;
-			}
-			java.lang.reflect.Field clientIdField = tracker.getClass().getDeclaredField("clientId");
-			clientIdField.setAccessible(true);
-			clientIdField.set(tracker, clientId);
-			try {
-				java.lang.reflect.Field lastUpdateField = tracker.getClass().getDeclaredField("lastClientIdUpdate");
-				lastUpdateField.setAccessible(true);
-				lastUpdateField.setLong(tracker, System.currentTimeMillis());
-			} catch (NoSuchFieldException ignored) {
-			}
-			return true;
-		} catch (Exception ex) {
-			DebugLog.error("Failed to apply SoundCloud client_id", ex);
-			return false;
-		}
-	}
-
-	private String safe(String value) {
-		if (value == null) {
-			return "";
-		}
-		return value.trim();
 	}
 
 	public void setResolver(TrackResolver resolver) {
