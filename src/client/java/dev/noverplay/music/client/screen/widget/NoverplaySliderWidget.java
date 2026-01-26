@@ -1,6 +1,5 @@
 package dev.noverplay.music.client.screen.widget;
 
-import net.minecraft.client.gui.Click;
 import net.minecraft.client.gui.widget.SliderWidget;
 import net.minecraft.text.Text;
 import net.minecraft.util.math.MathHelper;
@@ -21,15 +20,15 @@ public abstract class NoverplaySliderWidget extends SliderWidget {
 	}
 
 	@Override
-	public void onClick(Click click, boolean doubleClick) {
+	public void onClick(double mouseX, double mouseY) {
 		dragging = true;
-		super.onClick(click, doubleClick);
+		super.onClick(mouseX, mouseY);
 	}
 
 	@Override
-	public void onRelease(Click click) {
+	public void onRelease(double mouseX, double mouseY) {
 		dragging = false;
-		super.onRelease(click);
+		super.onRelease(mouseX, mouseY);
 	}
 
 	public boolean isDragging() {

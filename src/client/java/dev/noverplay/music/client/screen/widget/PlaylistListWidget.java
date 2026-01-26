@@ -4,9 +4,10 @@ import dev.noverplay.music.client.model.PlaylistInfo;
 import dev.noverplay.music.client.util.DebugLog;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.gui.Click;
+import net.minecraft.client.gui.screen.narration.NarrationPart;
 import net.minecraft.client.gui.screen.narration.NarrationMessageBuilder;
 import net.minecraft.client.gui.widget.EntryListWidget;
+import net.minecraft.text.Text;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -18,7 +19,7 @@ public class PlaylistListWidget extends EntryListWidget<PlaylistListWidget.Playl
 
 	public PlaylistListWidget(MinecraftClient client, int width, int height, int top, int itemHeight,
 							  BiConsumer<PlaylistInfo, Integer> onSelect) {
-		super(client, width, height, top, itemHeight);
+		super(client, width, height, top, top + height, itemHeight);
 		this.onSelect = onSelect;
 	}
 
@@ -43,12 +44,11 @@ public class PlaylistListWidget extends EntryListWidget<PlaylistListWidget.Playl
 		for (int i = 0; i < playlists.size(); i++) {
 			addEntry(new PlaylistEntry(playlists.get(i), i));
 		}
-		setScrollY(0.0);
-		refreshScroll();
+		setScrollAmount(0.0);
 	}
 
 	@Override
-	protected int getScrollbarX() {
+	protected int getScrollbarPositionX() {
 		return getRowRight() - 6;
 	}
 
@@ -58,8 +58,8 @@ public class PlaylistListWidget extends EntryListWidget<PlaylistListWidget.Playl
 	}
 
 	@Override
-	protected void appendClickableNarrations(NarrationMessageBuilder builder) {
-		this.appendDefaultNarrations(builder);
+	public void appendNarrations(NarrationMessageBuilder builder) {
+		builder.put(NarrationPart.TITLE, Text.literal("Playlists"));
 	}
 
 	private String trimWithEllipsis(String text, int maxWidth) {
@@ -88,24 +88,33 @@ public class PlaylistListWidget extends EntryListWidget<PlaylistListWidget.Playl
 		}
 
 		@Override
-		public void render(DrawContext context, int index, int y, boolean hovered, float delta) {
-			int x = getContentX();
-			int yPos = getContentY();
+		public void render(DrawContext context, int index, int y, int x, int entryWidth, int entryHeight,
+						   int mouseX, int mouseY, boolean hovered, float delta) {
+			int yPos = y;
 			int titleColor = 0xFFFFFFFF;
 			int metaColor = 0xFFAAAAAA;
+			String title = playlist.title();
+			String author = playlist.author();
+			if (title == null || title.isBlank()) {
+				title = "Unknown playlist";
+			}
+			if (author == null || author.isBlank()) {
+				author = "Unknown author";
+			}
 			String count = playlist.trackCount() > 0 ? playlist.trackCount() + " tracks" : "";
 			int countWidth = client.textRenderer.getWidth(count);
-			int maxWidth = getContentWidth() - countWidth - 15;
-			String titleText = trimWithEllipsis(playlist.title(), maxWidth);
-			String authorText = trimWithEllipsis(playlist.author(), maxWidth);
+			int countPad = 6;
+			int maxWidth = entryWidth - countWidth - 15;
+			String titleText = trimWithEllipsis(title, maxWidth);
+			String authorText = trimWithEllipsis(author, maxWidth);
 			context.drawTextWithShadow(client.textRenderer, titleText, x, yPos + 2, titleColor);
 			context.drawTextWithShadow(client.textRenderer, authorText, x, yPos + 14, metaColor);
-			context.drawTextWithShadow(client.textRenderer, count, getContentRightEnd() - countWidth, yPos + 2, metaColor);
+			context.drawTextWithShadow(client.textRenderer, count, x + entryWidth - countWidth - countPad, yPos + 2, metaColor);
 		}
 
 		@Override
-		public boolean mouseClicked(Click click, boolean doubleClick) {
-			if (click.button() == 0 && onSelect != null) {
+		public boolean mouseClicked(double mouseX, double mouseY, int button) {
+			if (button == 0 && onSelect != null) {
 				onSelect.accept(playlist, index);
 				return true;
 			}

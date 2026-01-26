@@ -52,6 +52,9 @@ public class YouTubeService implements MusicService {
 			return new SearchResult(List.of(), List.of(), null);
 		}
 		List<TrackInfo> results = searchTracksHtml(query, offset, limit);
+		if (results.isEmpty()) {
+			results = searchTracksLavaplayer(query, offset, limit);
+		}
 		return new SearchResult(results, List.of(), null);
 	}
 
@@ -239,6 +242,40 @@ public class YouTubeService implements MusicService {
 		}
 	}
 
+	private List<TrackInfo> searchTracksLavaplayer(String query, int offset, int limit) {
+		AudioItem item = loadItem(YT_SEARCH_PREFIX + query);
+		if (!(item instanceof AudioPlaylist playlist)) {
+			return List.of();
+		}
+		List<AudioTrack> tracks = playlist.getTracks();
+		if (tracks == null || tracks.isEmpty()) {
+			return List.of();
+		}
+		int from = Math.max(0, offset);
+		int to = Math.min(tracks.size(), from + Math.max(1, limit));
+		List<TrackInfo> results = new ArrayList<>();
+		for (AudioTrack track : tracks.subList(from, to)) {
+			AudioTrackInfo info = track.getInfo();
+			if (info == null || info.identifier == null || info.identifier.isBlank()) {
+				continue;
+			}
+			String videoId = normalizeVideoId(info.identifier);
+			if (videoId.isBlank()) {
+				continue;
+			}
+			results.add(new TrackInfo(
+				videoId,
+				safe(info.title),
+				safe(info.author),
+				(int) (info.length / 1000L),
+				ServiceType.YOUTUBE,
+				youtubeCover(videoId),
+				youtubeUrl(videoId)
+			));
+		}
+		return results;
+	}
+
 	private List<String> extractRendererBlocks(String body, String marker) {
 		List<String> blocks = new ArrayList<>();
 		int index = 0;
@@ -404,5 +441,28 @@ public class YouTubeService implements MusicService {
 
 	private String youtubeCover(String id) {
 		return "https://i.ytimg.com/vi/" + id + "/hqdefault.jpg";
+	}
+
+	private String normalizeVideoId(String identifier) {
+		String value = identifier.trim();
+		int vIndex = value.indexOf("v=");
+		if (vIndex >= 0) {
+			String part = value.substring(vIndex + 2);
+			int amp = part.indexOf("&");
+			if (amp >= 0) {
+				part = part.substring(0, amp);
+			}
+			return part;
+		}
+		int shortIndex = value.indexOf("youtu.be/");
+		if (shortIndex >= 0) {
+			String part = value.substring(shortIndex + 9);
+			int amp = part.indexOf("?");
+			if (amp >= 0) {
+				part = part.substring(0, amp);
+			}
+			return part;
+		}
+		return value;
 	}
 }

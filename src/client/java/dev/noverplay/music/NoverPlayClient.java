@@ -13,14 +13,12 @@ import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.option.KeyBinding;
 import net.minecraft.client.util.InputUtil;
-import net.minecraft.util.Identifier;
 import org.lwjgl.glfw.GLFW;
 
 public class NoverPlayClient implements ClientModInitializer {
 	private static NoverplayBackend backend;
 	private static NoverplayPlayer player;
 	private static KeyBinding openKeybind;
-	private static KeyBinding.Category keyCategory;
 
 	public static NoverplayBackend getBackend() {
 		return backend;
@@ -50,13 +48,12 @@ public class NoverPlayClient implements ClientModInitializer {
 		player = new NoverplayPlayer(config);
 		backend = new NoverplayBackend(player.getPlayerManager());
 		player.setResolver(backend);
-		keyCategory = KeyBinding.Category.create(Identifier.of(NoverPlay.MOD_ID, "noverplay"));
 		openKeybind = KeyBindingHelper.registerKeyBinding(
 			new KeyBinding(
 				"key.noverplay.open",
 				InputUtil.Type.KEYSYM,
 				GLFW.GLFW_KEY_P,
-				keyCategory
+				"key.categories.noverplay"
 			)
 		);
 		ClientTickEvents.END_CLIENT_TICK.register(client -> {

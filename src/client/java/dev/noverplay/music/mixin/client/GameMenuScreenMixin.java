@@ -15,7 +15,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 @Mixin(GameMenuScreen.class)
 public abstract class GameMenuScreenMixin extends Screen {
-	private static final Identifier LOGO_TEXTURE = Identifier.of(NoverPlay.MOD_ID, "textures/gui/noverplay_logo.png");
+	private static final Identifier LOGO_TEXTURE = new Identifier(NoverPlay.MOD_ID, "textures/gui/noverplay_logo.png");
 
 	protected GameMenuScreenMixin(Text title) {
 		super(title);

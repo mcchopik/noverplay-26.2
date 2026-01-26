@@ -46,7 +46,7 @@ public class NoverplayPlayer {
 	public NoverplayPlayer(NoverplayConfig config) {
 		System.setProperty("java.net.preferIPv4Stack", "true");
 		this.playerManager = new DefaultAudioPlayerManager();
-		this.audioDataFormat = new Pcm16AudioDataFormat(2, 48000, 960, true);
+		this.audioDataFormat = new Pcm16AudioDataFormat(2, 48000, 960, false);
 		setupPlayerManager();
 		this.player = playerManager.createPlayer();
 		player.setFrameBufferDuration(FRAME_BUFFER_MS);

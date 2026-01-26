@@ -4,9 +4,10 @@ import dev.noverplay.music.client.model.TrackInfo;
 import dev.noverplay.music.client.util.DebugLog;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.gui.Click;
+import net.minecraft.client.gui.screen.narration.NarrationPart;
 import net.minecraft.client.gui.screen.narration.NarrationMessageBuilder;
 import net.minecraft.client.gui.widget.EntryListWidget;
+import net.minecraft.text.Text;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -18,7 +19,7 @@ public class TrackListWidget extends EntryListWidget<TrackListWidget.TrackEntry>
 
 	public TrackListWidget(MinecraftClient client, int width, int height, int top, int itemHeight,
 						   BiConsumer<TrackInfo, Integer> onSelect) {
-		super(client, width, height, top, itemHeight);
+		super(client, width, height, top, top + height, itemHeight);
 		this.onSelect = onSelect;
 	}
 
@@ -51,8 +52,7 @@ public class TrackListWidget extends EntryListWidget<TrackListWidget.TrackEntry>
 		for (int i = 0; i < tracks.size(); i++) {
 			addEntry(new TrackEntry(tracks.get(i), i));
 		}
-		setScrollY(0.0);
-		refreshScroll();
+		setScrollAmount(0.0);
 	}
 
 	public List<TrackInfo> getTracks() {
@@ -60,7 +60,7 @@ public class TrackListWidget extends EntryListWidget<TrackListWidget.TrackEntry>
 	}
 
 	@Override
-	protected int getScrollbarX() {
+	protected int getScrollbarPositionX() {
 		return getRowRight() - 6;
 	}
 
@@ -70,8 +70,8 @@ public class TrackListWidget extends EntryListWidget<TrackListWidget.TrackEntry>
 	}
 
 	@Override
-	protected void appendClickableNarrations(NarrationMessageBuilder builder) {
-		this.appendDefaultNarrations(builder);
+	public void appendNarrations(NarrationMessageBuilder builder) {
+		builder.put(NarrationPart.TITLE, Text.literal("Tracks"));
 	}
 
 	private String trimWithEllipsis(String text, int maxWidth) {
@@ -100,9 +100,9 @@ public class TrackListWidget extends EntryListWidget<TrackListWidget.TrackEntry>
 		}
 
 		@Override
-		public void render(DrawContext context, int index, int y, boolean hovered, float delta) {
-			int x = getContentX();
-			int yPos = getContentY();
+		public void render(DrawContext context, int index, int y, int x, int entryWidth, int entryHeight,
+						   int mouseX, int mouseY, boolean hovered, float delta) {
+			int yPos = y;
 			int titleColor = 0xFFFFFFFF;
 			int metaColor = 0xFFAAAAAA;
 			String title = track.title();
@@ -116,17 +116,17 @@ public class TrackListWidget extends EntryListWidget<TrackListWidget.TrackEntry>
 			String duration = track.durationText();
 			int durationWidth = client.textRenderer.getWidth(duration);
 			int durationPad = 25;
-			int maxWidth = getContentWidth() - durationWidth - 15 - durationPad;
+			int maxWidth = entryWidth - durationWidth - 15 - durationPad;
 			String titleText = trimWithEllipsis(title, maxWidth);
 			String artistText = trimWithEllipsis(artist, maxWidth);
 			context.drawTextWithShadow(client.textRenderer, titleText, x, yPos + 2, titleColor);
 			context.drawTextWithShadow(client.textRenderer, artistText, x, yPos + 14, metaColor);
-			context.drawTextWithShadow(client.textRenderer, duration, getContentRightEnd() - durationWidth - durationPad, yPos + 2, metaColor);
+			context.drawTextWithShadow(client.textRenderer, duration, x + entryWidth - durationWidth - durationPad, yPos + 2, metaColor);
 		}
 
 		@Override
-		public boolean mouseClicked(Click click, boolean doubleClick) {
-			if (click.button() == 0 && onSelect != null) {
+		public boolean mouseClicked(double mouseX, double mouseY, int button) {
+			if (button == 0 && onSelect != null) {
 				onSelect.accept(track, index);
 				return true;
 			}

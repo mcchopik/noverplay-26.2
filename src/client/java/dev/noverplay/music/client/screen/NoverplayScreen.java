@@ -20,18 +20,16 @@ import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.client.gui.widget.TextFieldWidget;
-import net.minecraft.client.gl.RenderPipelines;
-import net.minecraft.client.input.KeyInput;
 import net.minecraft.text.Text;
 import net.minecraft.util.Identifier;
-import net.minecraft.util.math.ColorHelper;
+import org.lwjgl.glfw.GLFW;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
 public class NoverplayScreen extends Screen {
-	private static final Identifier LOGO_TEXTURE = Identifier.of(NoverPlay.MOD_ID, "textures/gui/noverplay_logo.png");
+	private static final Identifier LOGO_TEXTURE = new Identifier(NoverPlay.MOD_ID, "textures/gui/noverplay_logo.png");
 	private static final int LOGO_TEXTURE_SIZE = 256;
 
 	private static final int ROW_HEIGHT = 20;
@@ -172,7 +170,10 @@ public class NoverplayScreen extends Screen {
 		listHeight = Math.max(60, contentBottom - listY);
 
 		trackList = new TrackListWidget(client, leftWidth, listHeight, listY, LIST_ITEM_HEIGHT, this::selectTrack);
-		trackList.position(leftWidth, listHeight, leftX, listY);
+		trackList.updateSize(leftWidth, listHeight, listY, listY + listHeight);
+		trackList.setLeftPos(leftX);
+		trackList.setRenderBackground(false);
+		trackList.setRenderHorizontalShadows(false);
 		if (showingPlaylistTracks) {
 			trackList.setTracks(playlistTracks);
 		} else {
@@ -180,7 +181,10 @@ public class NoverplayScreen extends Screen {
 		}
 
 		playlistList = new PlaylistListWidget(client, leftWidth, listHeight, listY, LIST_ITEM_HEIGHT, this::selectPlaylist);
-		playlistList.position(leftWidth, listHeight, leftX, listY);
+		playlistList.updateSize(leftWidth, listHeight, listY, listY + listHeight);
+		playlistList.setLeftPos(leftX);
+		playlistList.setRenderBackground(false);
+		playlistList.setRenderHorizontalShadows(false);
 		playlistList.setPlaylists(playlistResults);
 
 		int rightPadding = 6;
@@ -262,12 +266,13 @@ public class NoverplayScreen extends Screen {
 	}
 
 	@Override
-	public boolean keyPressed(KeyInput input) {
-		if (searchField != null && searchField.isFocused() && input.isEnterOrSpace()) {
+	public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+		if (searchField != null && searchField.isFocused()
+			&& (keyCode == GLFW.GLFW_KEY_ENTER || keyCode == GLFW.GLFW_KEY_KP_ENTER || keyCode == GLFW.GLFW_KEY_SPACE)) {
 			performSearch();
 			return true;
 		}
-		return super.keyPressed(input);
+		return super.keyPressed(keyCode, scanCode, modifiers);
 	}
 
 	@Override
@@ -308,7 +313,7 @@ public class NoverplayScreen extends Screen {
 	}
 
 	private void drawBackground(DrawContext context) {
-		context.fill(0, 0, width, height, 0xA0000000);
+		context.fill(0, 0, width, height, 0xFF000000);
 	}
 
 	private void drawPanels(DrawContext context, PlayerState state) {
@@ -318,8 +323,7 @@ public class NoverplayScreen extends Screen {
 		int logoSize = 18;
 		int logoX = panelX + 8;
 		int logoY = panelY + 5;
-		int color = ColorHelper.getWhite(1.0f);
-		context.drawTexture(RenderPipelines.GUI_TEXTURED, LOGO_TEXTURE, logoX, logoY, 0.0f, 0.0f, logoSize, logoSize, LOGO_TEXTURE_SIZE, LOGO_TEXTURE_SIZE, color);
+		context.drawTexture(LOGO_TEXTURE, logoX, logoY, 0, 0, logoSize, logoSize, LOGO_TEXTURE_SIZE, LOGO_TEXTURE_SIZE);
 		context.drawTextWithShadow(textRenderer, "Noverplay", logoX + logoSize + 6, panelY + 9, 0xFFE6E8EC);
 
 		context.fill(leftX - 2, listY - 2, leftX + leftWidth + 2, contentBottom, 0xFF12161B);
@@ -420,7 +424,7 @@ public class NoverplayScreen extends Screen {
 					playlistResults.addAll(result.playlists());
 					if (playlistList != null) {
 						playlistList.setPlaylists(playlistResults);
-						playlistList.setScrollY(0.0);
+						playlistList.setScrollAmount(0.0);
 					}
 					DebugLog.info("Search playlists applied count=" + playlistResults.size());
 				} else {
@@ -428,7 +432,7 @@ public class NoverplayScreen extends Screen {
 					trackResults.addAll(result.tracks());
 					if (trackList != null) {
 						trackList.setTracks(trackResults);
-						trackList.setScrollY(0.0);
+						trackList.setScrollAmount(0.0);
 					}
 					DebugLog.info("Search tracks applied count=" + trackResults.size());
 				}
