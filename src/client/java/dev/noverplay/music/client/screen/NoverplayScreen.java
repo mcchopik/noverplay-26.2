@@ -323,7 +323,12 @@ public class NoverplayScreen extends Screen {
 		int logoSize = 18;
 		int logoX = panelX + 8;
 		int logoY = panelY + 5;
-		context.drawTexture(LOGO_TEXTURE, logoX, logoY, 0, 0, logoSize, logoSize, LOGO_TEXTURE_SIZE, LOGO_TEXTURE_SIZE);
+		context.getMatrices().push();
+		context.getMatrices().translate(logoX, logoY, 0);
+		float logoScale = (float) logoSize / (float) LOGO_TEXTURE_SIZE;
+		context.getMatrices().scale(logoScale, logoScale, 1.0f);
+		context.drawTexture(LOGO_TEXTURE, 0, 0, 0, 0, LOGO_TEXTURE_SIZE, LOGO_TEXTURE_SIZE, LOGO_TEXTURE_SIZE, LOGO_TEXTURE_SIZE);
+		context.getMatrices().pop();
 		context.drawTextWithShadow(textRenderer, "Noverplay", logoX + logoSize + 6, panelY + 9, 0xFFE6E8EC);
 
 		context.fill(leftX - 2, listY - 2, leftX + leftWidth + 2, contentBottom, 0xFF12161B);

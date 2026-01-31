@@ -17,7 +17,6 @@ repositories {
     }
     maven { url "https://jitpack.io" }
     
-    // ВАЖНО: Добавил репозиторий для новой библиотеки
     maven { 
         name = "lavalink"
         url = "https://maven.lavalink.dev/releases" 
@@ -41,10 +40,6 @@ dependencies {
     modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
     modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
 
-    // ---------------------------------------------------------
-    // УДАЛИ ВСЕ СТРОКИ С "walkyst" !!! ОНИ СЛ ОМАНЫ.
-    // ВСТАВЬ ВМЕСТО НИХ ЭТО:
-    // ---------------------------------------------------------
     modImplementation "dev.arbjerg:lavaplayer:2.2.6"
     include "dev.arbjerg:lavaplayer:2.2.6"
     modImplementation "dev.arbjerg:lava-common:2.2.6"
@@ -52,19 +47,17 @@ dependencies {
     modImplementation "dev.arbjerg:lavaplayer-natives:2.2.6"
     include "dev.arbjerg:lavaplayer-natives:2.2.6"
     
-    modImplementation "dev.lavalink.youtube:common:1.16.0"
-    include "dev.lavalink.youtube:common:1.16.0"
-    modImplementation "dev.lavalink.youtube:v2:1.16.0"
-    include "dev.lavalink.youtube:v2:1.16.0"
+    modImplementation "dev.lavalink.youtube:common:1.17.0"
+    include "dev.lavalink.youtube:common:1.17.0"
+    modImplementation "dev.lavalink.youtube:v2:1.17.0"
+    include "dev.lavalink.youtube:v2:1.17.0"
     modImplementation "org.mozilla:rhino-engine:1.7.15"
     include "org.mozilla:rhino-engine:1.7.15"
     modImplementation "org.mozilla:rhino:1.7.15"
     include "org.mozilla:rhino:1.7.15"
     modImplementation "com.grack:nanojson:1.7"
     include "com.grack:nanojson:1.7"
-    // ---------------------------------------------------------
 
-    // Остальные либы (slf4j, httpclient) оставь как есть
     implementation "org.slf4j:slf4j-simple:1.7.36"
     include "org.slf4j:slf4j-simple:1.7.36"
     implementation "org.slf4j:jcl-over-slf4j:1.7.36"
@@ -116,7 +109,7 @@ jar {
     from("LICENSE") {
         rename { "${it}_${inputs.properties.archivesName}"}
     }
-    // Добавь это на случай конфликта файлов, о котором ты писал ранее
+
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE 
 }
 

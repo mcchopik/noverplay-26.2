@@ -27,7 +27,13 @@ public class NoverplayIconButton extends PressableWidget {
 
 	@Override
 	protected void renderButton(DrawContext context, int mouseX, int mouseY, float delta) {
-		context.drawTexture(texture, this.getX(), this.getY(), 0, 0, this.width, this.height, TEXTURE_SIZE, TEXTURE_SIZE);
+		context.getMatrices().push();
+		context.getMatrices().translate(this.getX(), this.getY(), 0);
+		float scaleX = (float) this.width / (float) TEXTURE_SIZE;
+		float scaleY = (float) this.height / (float) TEXTURE_SIZE;
+		context.getMatrices().scale(scaleX, scaleY, 1.0f);
+		context.drawTexture(texture, 0, 0, 0, 0, TEXTURE_SIZE, TEXTURE_SIZE, TEXTURE_SIZE, TEXTURE_SIZE);
+		context.getMatrices().pop();
 	}
 
 	@Override
