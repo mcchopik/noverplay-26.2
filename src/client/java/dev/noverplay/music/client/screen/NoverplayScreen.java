@@ -63,6 +63,7 @@ public class NoverplayScreen extends Screen {
 	private ButtonWidget searchButton;
 	private ButtonWidget closeButton;
 	private IconLinkButton telegramButton;
+	private ButtonWidget youtubeAuthButton;
 
 	private ButtonWidget tracksButton;
 	private ButtonWidget playlistsButton;
@@ -111,6 +112,13 @@ public class NoverplayScreen extends Screen {
 	private int lastMouseX;
 	private int lastMouseY;
 	private float lastDelta;
+	private volatile boolean oauthInProgress;
+	private volatile boolean oauthCancelled;
+	private String oauthUserCode = "";
+	private String oauthOpenUrl = "";
+	private String oauthDeviceCode = "";
+	private long oauthPollIntervalMs = 5000L;
+	private long oauthExpiresAtMs;
 
 	public NoverplayScreen(Screen parent) {
 		super(Text.literal("Noverplay"));
@@ -160,6 +168,15 @@ public class NoverplayScreen extends Screen {
 		int closeY = panelY + 6;
 		int iconSize = 16;
 		int iconX = closeX - iconSize - 6;
+		int authGap = 6;
+		int authWidth = Math.min(90, iconX - panelX - authGap);
+		if (authWidth >= 60) {
+			int authX = iconX - authWidth - authGap;
+			youtubeAuthButton = ButtonWidget.builder(Text.literal("YT Login"), button -> startYoutubeAuth())
+				.dimensions(authX, closeY, authWidth, closeHeight)
+				.build();
+			addDrawableChild(youtubeAuthButton);
+		}
 		telegramButton = new IconLinkButton(iconX, closeY, iconSize, TELEGRAM_TEXTURE, Text.literal("Telegram"), () ->
 			openExternalLink(TELEGRAM_URL));
 		addDrawableChild(telegramButton);
@@ -305,6 +322,7 @@ public class NoverplayScreen extends Screen {
 		updateModeButtons();
 		updateListVisibility();
 		refreshLoadingState();
+		updateYoutubeAuthButton();
 		DebugLog.info("Screen init complete");
 	}
 
@@ -320,6 +338,8 @@ public class NoverplayScreen extends Screen {
 
 	@Override
 	public void close() {
+		oauthCancelled = true;
+		oauthInProgress = false;
 		NoverPlayClient.saveScreenState(buildState());
 		persistConfig();
 		if (client != null) {
@@ -690,6 +710,19 @@ public class NoverplayScreen extends Screen {
 		}
 	}
 
+	private void updateYoutubeAuthButton() {
+		if (youtubeAuthButton == null || config == null) {
+			return;
+		}
+		boolean hasToken = config.youtubeRefreshToken != null && !config.youtubeRefreshToken.isBlank();
+		if (oauthInProgress) {
+			youtubeAuthButton.setMessage(Text.literal("YT Waiting"));
+		} else {
+			youtubeAuthButton.setMessage(Text.literal(hasToken ? "YT Relink" : "YT Login"));
+		}
+		youtubeAuthButton.active = true;
+	}
+
 	private void updateListVisibility() {
 		boolean showTrackList = !showPlaylists || showingPlaylistTracks;
 		if (showTrackList) {
@@ -815,6 +848,136 @@ public class NoverplayScreen extends Screen {
 		}
 		config.lastService = currentService.getId();
 		NoverplayConfigManager.save();
+	}
+
+	private void startYoutubeAuth() {
+		if (config == null || player == null) {
+			return;
+		}
+		config.youtubeOauthEnabled = true;
+		persistConfig();
+		if (oauthInProgress) {
+			reopenOauthPage();
+			return;
+		}
+		NoverplayPlayer.YoutubeOauthDevice device = player.requestYoutubeOauthDeviceCode();
+		if (device == null) {
+			statusMessage = "YouTube OAuth start failed";
+			updateYoutubeAuthButton();
+			return;
+		}
+		oauthCancelled = false;
+		oauthInProgress = true;
+		oauthUserCode = device.userCode();
+		oauthOpenUrl = device.openUrl();
+		oauthDeviceCode = device.deviceCode();
+		oauthPollIntervalMs = Math.max(1000L, device.pollIntervalMs());
+		oauthExpiresAtMs = device.expiresInMs() > 0 ? System.currentTimeMillis() + device.expiresInMs() : 0L;
+		copyOauthCodeToClipboard(oauthUserCode);
+		if (oauthOpenUrl != null && !oauthOpenUrl.isBlank()) {
+			openExternalLink(oauthOpenUrl);
+		}
+		statusMessage = "YouTube code " + oauthUserCode + " (copied)";
+		updateYoutubeAuthButton();
+		DebugLog.info("YouTube OAuth device flow started");
+		CompletableFuture.runAsync(this::pollYoutubeOauth);
+	}
+
+	private void reopenOauthPage() {
+		if (oauthUserCode != null && !oauthUserCode.isBlank()) {
+			copyOauthCodeToClipboard(oauthUserCode);
+			statusMessage = "YouTube code " + oauthUserCode + " (copied)";
+		}
+		if (oauthOpenUrl != null && !oauthOpenUrl.isBlank()) {
+			openExternalLink(oauthOpenUrl);
+		}
+		updateYoutubeAuthButton();
+	}
+
+	private void copyOauthCodeToClipboard(String code) {
+		if (client == null || code == null || code.isBlank()) {
+			return;
+		}
+		client.keyboard.setClipboard(code);
+	}
+
+	private void pollYoutubeOauth() {
+		while (!oauthCancelled) {
+			if (oauthExpiresAtMs > 0 && System.currentTimeMillis() > oauthExpiresAtMs) {
+				updateOauthStatus("YouTube OAuth expired");
+				break;
+			}
+			NoverplayPlayer.YoutubeOauthTokenResult result = player.fetchYoutubeOauthToken(oauthDeviceCode);
+			if (result == null) {
+				updateOauthStatus("YouTube OAuth error");
+				break;
+			}
+			switch (result.status()) {
+				case PENDING -> sleepOauth(oauthPollIntervalMs);
+				case SLOW_DOWN -> {
+					oauthPollIntervalMs += 5000L;
+					sleepOauth(oauthPollIntervalMs);
+				}
+				case SUCCESS -> {
+					String refreshToken = result.refreshToken();
+					if (refreshToken == null || refreshToken.isBlank()) {
+						updateOauthStatus("YouTube OAuth token missing");
+						break;
+					}
+					config.youtubeRefreshToken = refreshToken;
+					persistConfig();
+					player.startYoutubeOauthFlow(refreshToken);
+					updateOauthStatus("YouTube linked");
+					break;
+				}
+				case DENIED -> {
+					updateOauthStatus("YouTube OAuth denied");
+					break;
+				}
+				case EXPIRED -> {
+					updateOauthStatus("YouTube OAuth expired");
+					break;
+				}
+				case ERROR -> {
+					String message = result.message() == null ? "YouTube OAuth error" : "YouTube OAuth error: " + result.message();
+					updateOauthStatus(message);
+					break;
+				}
+			}
+			if (result.status() != NoverplayPlayer.YoutubeOauthTokenResult.Status.PENDING
+				&& result.status() != NoverplayPlayer.YoutubeOauthTokenResult.Status.SLOW_DOWN) {
+				break;
+			}
+		}
+		oauthInProgress = false;
+		updateYoutubeAuthButtonAsync();
+	}
+
+	private void sleepOauth(long millis) {
+		try {
+			Thread.sleep(millis);
+		} catch (InterruptedException ignored) {
+		}
+	}
+
+	private void updateOauthStatus(String message) {
+		oauthInProgress = false;
+		if (client == null) {
+			statusMessage = message;
+			return;
+		}
+		client.execute(() -> {
+			statusMessage = message;
+			updateYoutubeAuthButton();
+		});
+	}
+
+	private void updateYoutubeAuthButtonAsync() {
+		if (client == null) {
+			updateYoutubeAuthButton();
+			return;
+		}
+		client.execute(this::updateYoutubeAuthButton);
 	}
 
 	private NoverPlayClient.ScreenState buildState() {

@@ -9,7 +9,15 @@ import com.sedmelluq.discord.lavaplayer.player.AudioPlayerManager;
 import com.sedmelluq.discord.lavaplayer.player.DefaultAudioPlayerManager;
 import com.sedmelluq.discord.lavaplayer.player.event.AudioEventAdapter;
 import com.sedmelluq.discord.lavaplayer.source.AudioSourceManagers;
+import com.sedmelluq.discord.lavaplayer.tools.JsonBrowser;
+import dev.lavalink.youtube.AllClientsFailedException;
 import dev.lavalink.youtube.YoutubeAudioSourceManager;
+import dev.lavalink.youtube.clients.AndroidVr;
+import dev.lavalink.youtube.clients.Music;
+import dev.lavalink.youtube.clients.TvHtml5Embedded;
+import dev.lavalink.youtube.clients.Web;
+import dev.lavalink.youtube.clients.WebEmbedded;
+import dev.lavalink.youtube.clients.skeleton.Client;
 import com.sedmelluq.discord.lavaplayer.track.AudioPlaylist;
 import com.sedmelluq.discord.lavaplayer.track.AudioTrack;
 import com.sedmelluq.discord.lavaplayer.track.AudioTrackEndReason;
@@ -29,17 +37,23 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
 import java.util.List;
+import java.util.Locale;
 import java.util.Queue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 public class NoverplayPlayer {
 	private static final int FRAME_BUFFER_MS = 200;
+	private static final AtomicBoolean LOGIN_HINT_SHOWN = new AtomicBoolean(false);
+	private static final long DEFAULT_OAUTH_POLL_INTERVAL_MS = 5000L;
 	private final AudioPlayerManager playerManager;
+	private YoutubeAudioSourceManager youtube;
 	private final AudioDataFormat audioDataFormat;
 	private final boolean bigEndian;
 	private final AudioPlayer player;
 	private final LavaplayerAudioOutput output;
+	private final NoverplayConfig config;
 	private final ExecutorService executor = Executors.newSingleThreadExecutor();
 	private final Queue<TrackInfo> queue = new ArrayDeque<>();
 	private final Deque<TrackInfo> history = new ArrayDeque<>();
@@ -52,11 +66,12 @@ public class NoverplayPlayer {
 
 	public NoverplayPlayer(NoverplayConfig config) {
 		System.setProperty("java.net.preferIPv4Stack", "true");
+		this.config = config == null ? new NoverplayConfig() : config;
 		this.playerManager = new DefaultAudioPlayerManager();
 		FormatChoice choice = selectAudioFormat();
 		this.audioDataFormat = choice.dataFormat;
 		this.bigEndian = choice.bigEndian;
-		setupPlayerManager();
+		setupPlayerManager(this.config);
 		this.player = playerManager.createPlayer();
 		player.setFrameBufferDuration(FRAME_BUFFER_MS);
 		this.player.addListener(new TrackScheduler());
@@ -67,7 +82,7 @@ public class NoverplayPlayer {
 		DebugLog.info("Player initialized volume=" + initialVolume);
 	}
 
-	private void setupPlayerManager() {
+	private void setupPlayerManager(NoverplayConfig config) {
 		playerManager.setFrameBufferDuration(FRAME_BUFFER_MS);
 		playerManager.setPlayerCleanupThreshold(Long.MAX_VALUE);
 
@@ -75,7 +90,7 @@ public class NoverplayPlayer {
 		playerManager.getConfiguration().setOpusEncodingQuality(10);
 		playerManager.getConfiguration().setOutputFormat(audioDataFormat);
 
-		YoutubeAudioSourceManager youtube = new YoutubeAudioSourceManager();
+		youtube = buildYoutubeSource(config);
 		playerManager.registerSourceManager(youtube);
 		AudioSourceManagers.registerRemoteSources(
 			playerManager,
@@ -86,6 +101,196 @@ public class NoverplayPlayer {
 		String version = pkg == null ? null : pkg.getImplementationVersion();
 		DebugLog.info("Lavaplayer version=" + (version == null ? "<unknown>" : version));
 		DebugLog.info("YouTube manager=" + youtube.getClass().getName());
+	}
+
+	public void startYoutubeOauthFlow(String refreshToken) {
+		if (youtube == null) {
+			DebugLog.warn("YouTube manager not initialized");
+			return;
+		}
+		String token = trimToNull(refreshToken);
+		if (token != null) {
+			youtube.useOauth2(token, true);
+			DebugLog.info("YouTube OAuth refresh token applied");
+		} else {
+			DebugLog.warn("YouTube OAuth refresh token missing; start device flow from GUI.");
+		}
+	}
+
+	private YoutubeAudioSourceManager buildYoutubeSource(NoverplayConfig config) {
+		List<Client> clients = new ArrayList<>();
+		boolean oauthEnabled = config != null && config.youtubeOauthEnabled;
+
+		if (oauthEnabled) {
+			clients.add(new TvHtml5Embedded());
+		}
+		clients.add(new WebEmbedded());
+		clients.add(new Web());
+		clients.add(new AndroidVr());
+		clients.add(new Music());
+
+		YoutubeAudioSourceManager youtube = new YoutubeAudioSourceManager(clients.toArray(new Client[0]));
+
+		if (config != null) {
+			String poToken = trimToNull(config.youtubePoToken);
+			String visitorData = trimToNull(config.youtubeVisitorData);
+			if (poToken != null && visitorData != null) {
+				Web.setPoTokenAndVisitorData(poToken, visitorData);
+				WebEmbedded.setPoTokenAndVisitorData(poToken, visitorData);
+				DebugLog.info("YouTube PO token configured");
+			}
+
+			String refreshToken = trimToNull(config.youtubeRefreshToken);
+			if (refreshToken != null) {
+				youtube.useOauth2(refreshToken, true);
+				DebugLog.info("YouTube OAuth refresh token configured");
+			} else if (oauthEnabled) {
+				DebugLog.warn("YouTube OAuth enabled without refresh token; use the GUI login button.");
+			}
+		}
+
+		return youtube;
+	}
+
+	public YoutubeOauthDevice requestYoutubeOauthDeviceCode() {
+		if (youtube == null) {
+			DebugLog.warn("YouTube manager not initialized");
+			return null;
+		}
+		JsonBrowser response = youtube.getOauth2Handler().fetchDeviceCode();
+		String verificationUrl = firstNonBlank(
+			textOrNull(response, "verification_url"),
+			textOrNull(response, "verification_uri")
+		);
+		String verificationUrlComplete = firstNonBlank(
+			textOrNull(response, "verification_url_complete"),
+			textOrNull(response, "verification_uri_complete")
+		);
+		String userCode = textOrNull(response, "user_code");
+		String deviceCode = textOrNull(response, "device_code");
+		long intervalMs = response.get("interval").asLong(0) * 1000L;
+		if (intervalMs <= 0) {
+			intervalMs = DEFAULT_OAUTH_POLL_INTERVAL_MS;
+		}
+		long expiresMs = response.get("expires_in").asLong(0) * 1000L;
+		if (verificationUrl == null || userCode == null || deviceCode == null) {
+			DebugLog.warn("YouTube OAuth device code response missing fields: " + response.format());
+			return null;
+		}
+		String openUrl = verificationUrlComplete != null ? verificationUrlComplete : verificationUrl;
+		return new YoutubeOauthDevice(openUrl, verificationUrl, userCode, deviceCode, intervalMs, expiresMs);
+	}
+
+	public YoutubeOauthTokenResult fetchYoutubeOauthToken(String deviceCode) {
+		if (youtube == null) {
+			return YoutubeOauthTokenResult.error("YouTube manager not initialized");
+		}
+		if (deviceCode == null || deviceCode.isBlank()) {
+			return YoutubeOauthTokenResult.error("Device code is empty");
+		}
+		try {
+			JsonBrowser response = youtube.getOauth2Handler().fetchRefreshToken(deviceCode);
+			if (!response.get("error").isNull()) {
+				String error = response.get("error").text();
+				return YoutubeOauthTokenResult.fromError(error);
+			}
+			String refreshToken = response.get("refresh_token").text();
+			if (refreshToken == null || refreshToken.isBlank()) {
+				return YoutubeOauthTokenResult.error("Refresh token missing");
+			}
+			return YoutubeOauthTokenResult.success(refreshToken);
+		} catch (Exception ex) {
+			return YoutubeOauthTokenResult.error(ex.getMessage());
+		}
+	}
+
+	private String trimToNull(String value) {
+		if (value == null) {
+			return null;
+		}
+		String trimmed = value.trim();
+		return trimmed.isEmpty() ? null : trimmed;
+	}
+
+	private String textOrNull(JsonBrowser browser, String field) {
+		if (browser == null) {
+			return null;
+		}
+		JsonBrowser value = browser.get(field);
+		if (value == null || value.isNull()) {
+			return null;
+		}
+		String text = value.text();
+		return text == null || text.isBlank() ? null : text;
+	}
+
+	private String firstNonBlank(String... values) {
+		if (values == null) {
+			return null;
+		}
+		for (String value : values) {
+			if (value != null && !value.isBlank()) {
+				return value;
+			}
+		}
+		return null;
+	}
+
+	public record YoutubeOauthDevice(
+		String openUrl,
+		String verificationUrl,
+		String userCode,
+		String deviceCode,
+		long pollIntervalMs,
+		long expiresInMs
+	) {}
+
+	public record YoutubeOauthTokenResult(Status status, String refreshToken, String message) {
+		public enum Status {
+			PENDING,
+			SLOW_DOWN,
+			EXPIRED,
+			DENIED,
+			SUCCESS,
+			ERROR
+		}
+
+		public static YoutubeOauthTokenResult pending() {
+			return new YoutubeOauthTokenResult(Status.PENDING, null, null);
+		}
+
+		public static YoutubeOauthTokenResult slowDown() {
+			return new YoutubeOauthTokenResult(Status.SLOW_DOWN, null, null);
+		}
+
+		public static YoutubeOauthTokenResult expired() {
+			return new YoutubeOauthTokenResult(Status.EXPIRED, null, null);
+		}
+
+		public static YoutubeOauthTokenResult denied() {
+			return new YoutubeOauthTokenResult(Status.DENIED, null, null);
+		}
+
+		public static YoutubeOauthTokenResult success(String refreshToken) {
+			return new YoutubeOauthTokenResult(Status.SUCCESS, refreshToken, null);
+		}
+
+		public static YoutubeOauthTokenResult error(String message) {
+			return new YoutubeOauthTokenResult(Status.ERROR, null, message);
+		}
+
+		public static YoutubeOauthTokenResult fromError(String error) {
+			if (error == null) {
+				return error("unknown");
+			}
+			return switch (error) {
+				case "authorization_pending" -> pending();
+				case "slow_down" -> slowDown();
+				case "expired_token" -> expired();
+				case "access_denied" -> denied();
+				default -> error(error);
+			};
+		}
 	}
 
 	public void setResolver(TrackResolver resolver) {
@@ -208,9 +413,38 @@ public class NoverplayPlayer {
 				public void loadFailed(FriendlyException exception) {
 					NoverPlay.LOGGER.warn("Track load failed", exception);
 					DebugLog.error("Track load failed for identifier=" + identifier, exception);
+					maybeLogLoginHint(exception);
 				}
 			});
 		});
+	}
+
+	private void maybeLogLoginHint(Throwable error) {
+		if (!isLoginRequired(error)) {
+			return;
+		}
+		if (!LOGIN_HINT_SHOWN.compareAndSet(false, true)) {
+			return;
+		}
+		DebugLog.warn("YouTube requires login for playback.");
+		DebugLog.warn("Enable OAuth and use the GUI 'YT Login' button to link an account.");
+		DebugLog.warn("If needed, enter the shown code in the browser; refresh token is saved automatically.");
+	}
+
+	private boolean isLoginRequired(Throwable error) {
+		for (Throwable current = error; current != null; current = current.getCause()) {
+			if (current instanceof AllClientsFailedException) {
+				String message = current.getMessage();
+				if (message != null && message.toLowerCase(Locale.ROOT).contains("login")) {
+					return true;
+				}
+			}
+			String message = current.getMessage();
+			if (message != null && message.toLowerCase(Locale.ROOT).contains("requires login")) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	private void startTrack(AudioTrack audioTrack, TrackInfo trackInfo) {
