@@ -24,6 +24,11 @@ public class TrackListWidget extends EntryListWidget<TrackListWidget.TrackEntry>
 	}
 
 	public void setTracks(List<TrackInfo> items) {
+		setTracks(items, false);
+	}
+
+	public void setTracks(List<TrackInfo> items, boolean keepScroll) {
+		double scroll = getScrollAmount();
 		tracks.clear();
 		clearEntries();
 		if (items != null) {
@@ -52,11 +57,19 @@ public class TrackListWidget extends EntryListWidget<TrackListWidget.TrackEntry>
 		for (int i = 0; i < tracks.size(); i++) {
 			addEntry(new TrackEntry(tracks.get(i), i));
 		}
-		setScrollAmount(0.0);
+		setScrollAmount(keepScroll ? scroll : 0.0);
 	}
 
 	public List<TrackInfo> getTracks() {
 		return List.copyOf(tracks);
+	}
+
+	public double getScrollAmountValue() {
+		return getScrollAmount();
+	}
+
+	public double getMaxScrollAmount() {
+		return getMaxScroll();
 	}
 
 	@Override

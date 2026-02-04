@@ -1,7 +1,6 @@
 package dev.noverplay.music.client.audio;
 
 import com.sedmelluq.discord.lavaplayer.format.AudioDataFormat;
-import com.sedmelluq.discord.lavaplayer.format.AudioDataFormatTools;
 import com.sedmelluq.discord.lavaplayer.format.AudioPlayerInputStream;
 import com.sedmelluq.discord.lavaplayer.player.AudioPlayer;
 import dev.noverplay.music.NoverPlay;
@@ -16,17 +15,19 @@ import javax.sound.sampled.SourceDataLine;
 import java.io.InterruptedIOException;
 
 public class LavaplayerAudioOutput implements Runnable {
-	private static final int LINE_BUFFER_FRAMES = 5;
+private static final int LINE_BUFFER_FRAMES = 2;
 
 	private final AudioPlayer player;
 	private final AudioDataFormat dataFormat;
+	private final boolean bigEndian;
 	private Thread thread;
 	private volatile boolean running;
 	private SourceDataLine line;
 
-	public LavaplayerAudioOutput(AudioPlayer player, AudioDataFormat dataFormat) {
+	public LavaplayerAudioOutput(AudioPlayer player, AudioDataFormat dataFormat, boolean bigEndian) {
 		this.player = player;
 		this.dataFormat = dataFormat;
+		this.bigEndian = bigEndian;
 	}
 
 	public void start() {
@@ -50,7 +51,13 @@ public class LavaplayerAudioOutput implements Runnable {
 
 	@Override
 	public void run() {
-		AudioFormat format = AudioDataFormatTools.toAudioFormat(dataFormat);
+		AudioFormat format = new AudioFormat(
+			dataFormat.sampleRate,
+			16,
+			dataFormat.channelCount,
+			true,
+			bigEndian
+		);
 		DataLine.Info info = new DataLine.Info(SourceDataLine.class, format);
 		AudioInputStream stream = AudioPlayerInputStream.createStream(
 			player,
@@ -101,7 +108,7 @@ public class LavaplayerAudioOutput implements Runnable {
 			line.open(format, bufferSize);
 			line.start();
 			return true;
-		} catch (LineUnavailableException e) {
+		} catch (LineUnavailableException | IllegalArgumentException e) {
 			NoverPlay.LOGGER.error("Audio output unavailable", e);
 			DebugLog.error("Audio output unavailable", e);
 			return false;

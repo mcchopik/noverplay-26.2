@@ -143,9 +143,22 @@ public class YouTubeService implements MusicService {
 			if (body == null || body.isBlank()) {
 				return List.of();
 			}
-			List<String> blocks = extractRendererBlocks(body, "\"playlistRenderer\":{");
+			List<String> blocks = extractRendererBlocksByKey(body, "playlistRenderer");
+			blocks.addAll(extractRendererBlocksByKey(body, "gridPlaylistRenderer"));
 			if (blocks.isEmpty()) {
-				return List.of();
+				body = HttpHelper.getText(
+					"https://www.youtube.com/results",
+					Map.of("search_query", query, "hl", "en", "gl", "US"),
+					Map.of("User-Agent", USER_AGENT, "Accept-Language", "en-US,en;q=0.9")
+				);
+				if (body == null || body.isBlank()) {
+					return List.of();
+				}
+				blocks = extractRendererBlocksByKey(body, "playlistRenderer");
+				blocks.addAll(extractRendererBlocksByKey(body, "gridPlaylistRenderer"));
+				if (blocks.isEmpty()) {
+					return List.of();
+				}
 			}
 			List<PlaylistInfo> results = new ArrayList<>();
 			Set<String> seen = new HashSet<>();
@@ -283,6 +296,31 @@ public class YouTubeService implements MusicService {
 			int start = body.indexOf('{', index);
 			if (start < 0) {
 				break;
+			}
+			int end = findMatchingBrace(body, start);
+			if (end < 0) {
+				break;
+			}
+			blocks.add(body.substring(start, end + 1));
+			index = end + 1;
+		}
+		return blocks;
+	}
+
+	private List<String> extractRendererBlocksByKey(String body, String key) {
+		String marker = "\"" + key + "\"";
+		List<String> blocks = new ArrayList<>();
+		int index = 0;
+		while ((index = body.indexOf(marker, index)) != -1) {
+			int colon = body.indexOf(':', index + marker.length());
+			if (colon < 0) {
+				index += marker.length();
+				continue;
+			}
+			int start = body.indexOf('{', colon);
+			if (start < 0) {
+				index = colon + 1;
+				continue;
 			}
 			int end = findMatchingBrace(body, start);
 			if (end < 0) {

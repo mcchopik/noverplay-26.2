@@ -3,6 +3,8 @@ package dev.noverplay.music;
 import dev.noverplay.music.client.audio.NoverplayPlayer;
 import dev.noverplay.music.client.config.NoverplayConfig;
 import dev.noverplay.music.client.config.NoverplayConfigManager;
+import dev.noverplay.music.client.model.PlaylistInfo;
+import dev.noverplay.music.client.model.TrackInfo;
 import dev.noverplay.music.client.screen.NoverplayScreen;
 import dev.noverplay.music.client.service.NoverplayBackend;
 import dev.noverplay.music.client.util.DebugLog;
@@ -19,6 +21,7 @@ public class NoverPlayClient implements ClientModInitializer {
 	private static NoverplayBackend backend;
 	private static NoverplayPlayer player;
 	private static KeyBinding openKeybind;
+	private static ScreenState lastScreenState;
 
 	public static NoverplayBackend getBackend() {
 		return backend;
@@ -26,6 +29,14 @@ public class NoverPlayClient implements ClientModInitializer {
 
 	public static NoverplayPlayer getPlayer() {
 		return player;
+	}
+
+	public static void saveScreenState(ScreenState state) {
+		lastScreenState = state;
+	}
+
+	public static ScreenState getScreenState() {
+		return lastScreenState;
 	}
 
 	public static void openNoverplayScreen(MinecraftClient client) {
@@ -62,5 +73,21 @@ public class NoverPlayClient implements ClientModInitializer {
 			}
 		});
 		DebugLog.info("Client init complete");
+	}
+
+	public static class ScreenState {
+		public String query = "";
+		public boolean showPlaylists;
+		public boolean showingPlaylistTracks;
+		public String statusMessage = "";
+		public int searchOffset;
+		public int searchLimit = 50;
+		public boolean searchHasMore;
+		public double trackScroll;
+		public double playlistScroll;
+		public PlaylistInfo currentPlaylist;
+		public java.util.List<TrackInfo> trackResults = java.util.List.of();
+		public java.util.List<PlaylistInfo> playlistResults = java.util.List.of();
+		public java.util.List<TrackInfo> playlistTracks = java.util.List.of();
 	}
 }

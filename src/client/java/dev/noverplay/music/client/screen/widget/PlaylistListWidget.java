@@ -24,6 +24,11 @@ public class PlaylistListWidget extends EntryListWidget<PlaylistListWidget.Playl
 	}
 
 	public void setPlaylists(List<PlaylistInfo> items) {
+		setPlaylists(items, false);
+	}
+
+	public void setPlaylists(List<PlaylistInfo> items, boolean keepScroll) {
+		double scroll = getScrollAmount();
 		playlists.clear();
 		clearEntries();
 		if (items != null) {
@@ -44,7 +49,19 @@ public class PlaylistListWidget extends EntryListWidget<PlaylistListWidget.Playl
 		for (int i = 0; i < playlists.size(); i++) {
 			addEntry(new PlaylistEntry(playlists.get(i), i));
 		}
-		setScrollAmount(0.0);
+		setScrollAmount(keepScroll ? scroll : 0.0);
+	}
+
+	public List<PlaylistInfo> getPlaylists() {
+		return List.copyOf(playlists);
+	}
+
+	public double getScrollAmountValue() {
+		return getScrollAmount();
+	}
+
+	public double getMaxScrollAmount() {
+		return getMaxScroll();
 	}
 
 	@Override

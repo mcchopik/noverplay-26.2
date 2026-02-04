@@ -21,6 +21,10 @@ import dev.noverplay.music.client.model.TrackInfo;
 import dev.noverplay.music.client.service.TrackResolver;
 import dev.noverplay.music.client.util.DebugLog;
 
+import javax.sound.sampled.AudioFormat;
+import javax.sound.sampled.AudioSystem;
+import javax.sound.sampled.DataLine;
+import javax.sound.sampled.SourceDataLine;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
@@ -30,14 +34,17 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public class NoverplayPlayer {
-	private static final int FRAME_BUFFER_MS = 1000;
+	private static final int FRAME_BUFFER_MS = 200;
 	private final AudioPlayerManager playerManager;
 	private final AudioDataFormat audioDataFormat;
+	private final boolean bigEndian;
 	private final AudioPlayer player;
 	private final LavaplayerAudioOutput output;
 	private final ExecutorService executor = Executors.newSingleThreadExecutor();
 	private final Queue<TrackInfo> queue = new ArrayDeque<>();
 	private final Deque<TrackInfo> history = new ArrayDeque<>();
+	private volatile AudioTrack preloadedTrack;
+	private volatile TrackInfo preloadedInfo;
 	private volatile TrackInfo currentTrack;
 	private volatile String playlistTitle = "";
 	private volatile float volume = 0.5f;
@@ -46,12 +53,14 @@ public class NoverplayPlayer {
 	public NoverplayPlayer(NoverplayConfig config) {
 		System.setProperty("java.net.preferIPv4Stack", "true");
 		this.playerManager = new DefaultAudioPlayerManager();
-		this.audioDataFormat = new Pcm16AudioDataFormat(2, 48000, 960, false);
+		FormatChoice choice = selectAudioFormat();
+		this.audioDataFormat = choice.dataFormat;
+		this.bigEndian = choice.bigEndian;
 		setupPlayerManager();
 		this.player = playerManager.createPlayer();
 		player.setFrameBufferDuration(FRAME_BUFFER_MS);
 		this.player.addListener(new TrackScheduler());
-		this.output = new LavaplayerAudioOutput(player, audioDataFormat);
+		this.output = new LavaplayerAudioOutput(player, audioDataFormat, bigEndian);
 		this.output.start();
 		float initialVolume = config == null ? 0.5f : config.volume;
 		setVolume(initialVolume);
@@ -93,6 +102,8 @@ public class NoverplayPlayer {
 		}
 		queue.clear();
 		history.clear();
+		preloadedTrack = null;
+		preloadedInfo = null;
 		for (int i = index + 1; i < tracks.size(); i++) {
 			queue.offer(tracks.get(i));
 		}
@@ -100,10 +111,59 @@ public class NoverplayPlayer {
 		play(track);
 	}
 
+	private static FormatChoice selectAudioFormat() {
+		int[] sampleRates = new int[]{48000, 44100, 32000, 24000};
+		int[] channels = new int[]{2, 1};
+		boolean[] endians = new boolean[]{false, true};
+
+		for (int sampleRate : sampleRates) {
+			int frameDuration = Math.max(1, sampleRate / 50);
+			for (int channelCount : channels) {
+				for (boolean endian : endians) {
+					if (canOpenLine(sampleRate, channelCount, endian)) {
+						return new FormatChoice(
+							new Pcm16AudioDataFormat(channelCount, sampleRate, frameDuration, endian),
+							endian
+						);
+					}
+				}
+			}
+		}
+		int fallbackRate = 48000;
+		int fallbackFrameDuration = Math.max(1, fallbackRate / 50);
+		return new FormatChoice(new Pcm16AudioDataFormat(2, fallbackRate, fallbackFrameDuration, false), false);
+	}
+
+	private record FormatChoice(AudioDataFormat dataFormat, boolean bigEndian) {}
+
+	private static boolean canOpenLine(int sampleRate, int channels, boolean bigEndian) {
+		AudioFormat format = new AudioFormat(sampleRate, 16, channels, true, bigEndian);
+		DataLine.Info info = new DataLine.Info(SourceDataLine.class, format);
+		SourceDataLine line = null;
+		try {
+			line = (SourceDataLine) AudioSystem.getLine(info);
+			line.open(format);
+			return true;
+		} catch (Exception ignored) {
+			return false;
+		} finally {
+			if (line != null) {
+				try {
+					line.stop();
+					line.flush();
+					line.close();
+				} catch (Exception ignored) {
+				}
+			}
+		}
+	}
+
 	public void play(TrackInfo track) {
 		if (track == null) {
 			return;
 		}
+		preloadedTrack = null;
+		preloadedInfo = null;
 		executor.execute(() -> {
 			TrackInfo resolved = resolver != null ? resolver.resolve(track) : track;
 			if (resolved == null) {
@@ -158,6 +218,7 @@ public class NoverplayPlayer {
 		player.setPaused(false);
 		player.startTrack(audioTrack, false);
 		DebugLog.info("Start playback: " + formatTrack(trackInfo) + " lavaplayer=" + formatTrack(audioTrack));
+		preloadNext();
 	}
 
 	public void pause() {
@@ -182,7 +243,20 @@ public class NoverplayPlayer {
 				history.push(currentTrack);
 			}
 			DebugLog.info("Next track: " + formatTrack(next));
-			play(next);
+			if (preloadedInfo != null && preloadedTrack != null
+				&& preloadedInfo.trackId() != null
+				&& preloadedInfo.trackId().equals(next.trackId())) {
+				AudioTrack start = preloadedTrack;
+				preloadedTrack = null;
+				preloadedInfo = null;
+				try {
+					startTrack(start.makeClone(), next);
+				} catch (Exception ignored) {
+					startTrack(start, next);
+				}
+			} else {
+				play(next);
+			}
 		} else {
 			stop();
 		}
@@ -242,6 +316,51 @@ public class NoverplayPlayer {
 		executor.shutdownNow();
 		playerManager.shutdown();
 		DebugLog.info("Player shutdown");
+	}
+
+	private void preloadNext() {
+		TrackInfo next = queue.peek();
+		if (next == null || resolver == null) {
+			preloadedTrack = null;
+			preloadedInfo = null;
+			return;
+		}
+		executor.execute(() -> {
+			TrackInfo resolved = resolver.resolve(next);
+			if (resolved == null || resolved.streamUrl() == null || resolved.streamUrl().isBlank()) {
+				return;
+			}
+			String identifier = resolved.streamUrl();
+			playerManager.loadItemOrdered(this, identifier, new AudioLoadResultHandler() {
+				@Override
+				public void trackLoaded(AudioTrack audioTrack) {
+					preloadedInfo = resolved;
+					preloadedTrack = audioTrack;
+					DebugLog.info("Preloaded next track: " + formatTrack(resolved));
+				}
+
+				@Override
+				public void playlistLoaded(AudioPlaylist playlist) {
+					AudioTrack first = playlist.getSelectedTrack();
+					if (first == null && !playlist.getTracks().isEmpty()) {
+						first = playlist.getTracks().get(0);
+					}
+					if (first != null) {
+						preloadedInfo = resolved;
+						preloadedTrack = first;
+						DebugLog.info("Preloaded next track: " + formatTrack(resolved));
+					}
+				}
+
+				@Override
+				public void noMatches() {
+				}
+
+				@Override
+				public void loadFailed(FriendlyException exception) {
+				}
+			});
+		});
 	}
 
 	private String formatTrack(TrackInfo track) {

@@ -14,6 +14,7 @@ import dev.noverplay.music.client.model.TrackInfo;
 import dev.noverplay.music.client.screen.widget.NoverplaySliderWidget;
 import dev.noverplay.music.client.screen.widget.PlaylistListWidget;
 import dev.noverplay.music.client.screen.widget.TrackListWidget;
+import dev.noverplay.music.client.widget.IconLinkButton;
 import dev.noverplay.music.client.service.NoverplayBackend;
 import dev.noverplay.music.client.util.DebugLog;
 import net.minecraft.client.gui.DrawContext;
@@ -22,15 +23,19 @@ import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.client.gui.widget.TextFieldWidget;
 import net.minecraft.text.Text;
 import net.minecraft.util.Identifier;
+import net.minecraft.util.Util;
 import org.lwjgl.glfw.GLFW;
 
+import java.net.URI;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
 public class NoverplayScreen extends Screen {
 	private static final Identifier LOGO_TEXTURE = new Identifier(NoverPlay.MOD_ID, "textures/gui/noverplay_logo.png");
+	private static final Identifier TELEGRAM_TEXTURE = new Identifier(NoverPlay.MOD_ID, "textures/gui/telegram.png");
 	private static final int LOGO_TEXTURE_SIZE = 256;
+	private static final String TELEGRAM_URL = "https://t.me/NoverPlay";
 
 	private static final int ROW_HEIGHT = 20;
 	private static final int ROW_GAP = 6;
@@ -47,11 +52,17 @@ public class NoverplayScreen extends Screen {
 	private boolean showPlaylists;
 	private boolean showingPlaylistTracks;
 	private boolean loading;
+	private boolean loadingMore;
 	private String statusMessage = "";
+	private String searchQuery = "";
+	private int searchOffset;
+	private int searchLimit = 50;
+	private boolean searchHasMore;
 
 	private TextFieldWidget searchField;
 	private ButtonWidget searchButton;
 	private ButtonWidget closeButton;
+	private IconLinkButton telegramButton;
 
 	private ButtonWidget tracksButton;
 	private ButtonWidget playlistsButton;
@@ -97,6 +108,9 @@ public class NoverplayScreen extends Screen {
 	private int controlsY;
 	private int volumeLabelY;
 	private int volumeSliderY;
+	private int lastMouseX;
+	private int lastMouseY;
+	private float lastDelta;
 
 	public NoverplayScreen(Screen parent) {
 		super(Text.literal("Noverplay"));
@@ -114,7 +128,25 @@ public class NoverplayScreen extends Screen {
 		config = NoverplayConfigManager.get();
 		currentService = ServiceType.fromId(config.lastService);
 
-		String searchText = searchField != null ? searchField.getText() : "";
+		NoverPlayClient.ScreenState saved = NoverPlayClient.getScreenState();
+		if (saved != null) {
+			searchQuery = saved.query == null ? "" : saved.query;
+			showPlaylists = saved.showPlaylists;
+			showingPlaylistTracks = saved.showingPlaylistTracks;
+			statusMessage = saved.statusMessage == null ? "" : saved.statusMessage;
+			searchOffset = saved.searchOffset;
+			searchLimit = saved.searchLimit > 0 ? saved.searchLimit : 50;
+			searchHasMore = saved.searchHasMore;
+			currentPlaylist = saved.currentPlaylist;
+			trackResults.clear();
+			trackResults.addAll(saved.trackResults == null ? List.of() : saved.trackResults);
+			playlistResults.clear();
+			playlistResults.addAll(saved.playlistResults == null ? List.of() : saved.playlistResults);
+			playlistTracks.clear();
+			playlistTracks.addAll(saved.playlistTracks == null ? List.of() : saved.playlistTracks);
+		}
+
+		String searchText = searchField != null ? searchField.getText() : searchQuery;
 
 		clearChildren();
 		trackListAdded = false;
@@ -126,6 +158,11 @@ public class NoverplayScreen extends Screen {
 		int closeHeight = 16;
 		int closeX = panelX + panelWidth - closeWidth - 8;
 		int closeY = panelY + 6;
+		int iconSize = 16;
+		int iconX = closeX - iconSize - 6;
+		telegramButton = new IconLinkButton(iconX, closeY, iconSize, TELEGRAM_TEXTURE, Text.literal("Telegram"), () ->
+			openExternalLink(TELEGRAM_URL));
+		addDrawableChild(telegramButton);
 		closeButton = ButtonWidget.builder(Text.literal("Close"), button -> close())
 			.dimensions(closeX, closeY, closeWidth, closeHeight)
 			.build();
@@ -179,6 +216,9 @@ public class NoverplayScreen extends Screen {
 		} else {
 			trackList.setTracks(trackResults);
 		}
+		if (saved != null) {
+			trackList.setScrollAmount(saved.trackScroll);
+		}
 
 		playlistList = new PlaylistListWidget(client, leftWidth, listHeight, listY, LIST_ITEM_HEIGHT, this::selectPlaylist);
 		playlistList.updateSize(leftWidth, listHeight, listY, listY + listHeight);
@@ -186,6 +226,9 @@ public class NoverplayScreen extends Screen {
 		playlistList.setRenderBackground(false);
 		playlistList.setRenderHorizontalShadows(false);
 		playlistList.setPlaylists(playlistResults);
+		if (saved != null) {
+			playlistList.setScrollAmount(saved.playlistScroll);
+		}
 
 		int rightPadding = 6;
 		int sliderHeight = 16;
@@ -277,6 +320,7 @@ public class NoverplayScreen extends Screen {
 
 	@Override
 	public void close() {
+		NoverPlayClient.saveScreenState(buildState());
 		persistConfig();
 		if (client != null) {
 			client.setScreen(parent);
@@ -285,11 +329,24 @@ public class NoverplayScreen extends Screen {
 
 	@Override
 	public void render(DrawContext context, int mouseX, int mouseY, float delta) {
+		lastMouseX = mouseX;
+		lastMouseY = mouseY;
+		lastDelta = delta;
 		drawBackground(context);
 		PlayerState state = player != null ? player.snapshot() : null;
 		updatePlaybackWidgets(state);
 		drawPanels(context, state);
+		maybeLoadMore();
 		super.render(context, mouseX, mouseY, delta);
+	}
+
+	@Override
+	public boolean mouseScrolled(double mouseX, double mouseY, double amount) {
+		boolean handled = super.mouseScrolled(mouseX, mouseY, amount);
+		if (handled) {
+			maybeLoadMore();
+		}
+		return handled;
 	}
 
 	private void layout() {
@@ -313,7 +370,71 @@ public class NoverplayScreen extends Screen {
 	}
 
 	private void drawBackground(DrawContext context) {
-		context.fill(0, 0, width, height, 0xFF000000);
+		if (client != null && client.world != null) {
+			applyBlurIfPossible();
+			context.fill(0, 0, width, height, 0x88000000);
+			return;
+		}
+		renderParentBackground(context);
+		applyBlurIfPossible();
+		context.fill(0, 0, width, height, 0x66000000);
+	}
+
+	private void renderParentBackground(DrawContext context) {
+		if (parent == null || parent == this) {
+			return;
+		}
+		if (invokeParentMethod(context, "renderBackgroundTexture")) {
+			return;
+		}
+		if (invokeParentMethod(context, "renderPanorama")) {
+			return;
+		}
+		if (invokeParentMethod(context, "renderBackground")) {
+			return;
+		}
+	}
+
+	private boolean invokeParentMethod(DrawContext context, String name) {
+		java.lang.reflect.Method method = findDeclaredMethod(parent.getClass(), name, DrawContext.class);
+		if (method != null) {
+			try {
+				method.invoke(parent, context);
+				return true;
+			} catch (ReflectiveOperationException ignored) {
+			}
+		}
+		method = findDeclaredMethod(parent.getClass(), name, DrawContext.class, float.class);
+		if (method != null) {
+			try {
+				method.invoke(parent, context, lastDelta);
+				return true;
+			} catch (ReflectiveOperationException ignored) {
+			}
+		}
+		method = findDeclaredMethod(parent.getClass(), name, DrawContext.class, int.class, int.class, float.class);
+		if (method != null) {
+			try {
+				method.invoke(parent, context, lastMouseX, lastMouseY, lastDelta);
+				return true;
+			} catch (ReflectiveOperationException ignored) {
+			}
+		}
+		return false;
+	}
+
+	private java.lang.reflect.Method findDeclaredMethod(Class<?> type, String name, Class<?>... params) {
+		Class<?> current = type;
+		while (current != null) {
+			try {
+				java.lang.reflect.Method method = current.getDeclaredMethod(name, params);
+				method.setAccessible(true);
+				return method;
+			} catch (ReflectiveOperationException ignored) {
+			}
+			current = current.getSuperclass();
+		}
+		return null;
 	}
 
 	private void drawPanels(DrawContext context, PlayerState state) {
@@ -349,8 +470,10 @@ public class NoverplayScreen extends Screen {
 		TrackInfo track = state != null ? state.track() : null;
 		String title = track != null && !track.title().isBlank() ? track.title() : "No track";
 		String meta = buildMetaLine(track, state);
-		context.drawTextWithShadow(textRenderer, title, rightX + 6, titleY, 0xFFE6E8EC);
-		context.drawTextWithShadow(textRenderer, meta, rightX + 6, artistY, 0xFF9AA3AE);
+		int textX = rightX + 6;
+		int maxTextWidth = Math.max(0, rightWidth - 12);
+		drawMarqueeText(context, title, textX, titleY, maxTextWidth, 0xFFE6E8EC);
+		context.drawTextWithShadow(textRenderer, meta, textX, artistY, 0xFF9AA3AE);
 
 		int position = state != null ? state.positionSeconds() : 0;
 		int duration = state != null ? state.durationSeconds() : 0;
@@ -392,6 +515,11 @@ public class NoverplayScreen extends Screen {
 			return;
 		}
 		loading = true;
+		loadingMore = false;
+		searchQuery = query;
+		searchOffset = 0;
+		searchLimit = 50;
+		searchHasMore = true;
 		DebugLog.info("Search start service=" + currentService + " playlists=" + showPlaylists
 			+ " query=" + DebugLog.preview(query));
 		statusMessage = "Searching...";
@@ -401,8 +529,8 @@ public class NoverplayScreen extends Screen {
 		final boolean playlistSearch = showPlaylists;
 		final ServiceType service = currentService;
 		CompletableFuture<SearchResult> future = playlistSearch
-			? backend.searchPlaylists(service, query, 0, 50)
-			: backend.searchTracks(service, query, 0, 50);
+			? backend.searchPlaylists(service, query, searchOffset, searchLimit)
+			: backend.searchTracks(service, query, searchOffset, searchLimit);
 		future.whenComplete((result, error) -> {
 			if (client == null) {
 				return;
@@ -427,6 +555,7 @@ public class NoverplayScreen extends Screen {
 				if (playlistSearch) {
 					playlistResults.clear();
 					playlistResults.addAll(result.playlists());
+					searchHasMore = result.playlists().size() >= searchLimit;
 					if (playlistList != null) {
 						playlistList.setPlaylists(playlistResults);
 						playlistList.setScrollAmount(0.0);
@@ -435,6 +564,7 @@ public class NoverplayScreen extends Screen {
 				} else {
 					trackResults.clear();
 					trackResults.addAll(result.tracks());
+					searchHasMore = result.tracks().size() >= searchLimit;
 					if (trackList != null) {
 						trackList.setTracks(trackResults);
 						trackList.setScrollAmount(0.0);
@@ -589,12 +719,146 @@ public class NoverplayScreen extends Screen {
 		}
 	}
 
+	private void drawMarqueeText(DrawContext context, String text, int x, int y, int maxWidth, int color) {
+		if (text == null) {
+			return;
+		}
+		int textWidth = textRenderer.getWidth(text);
+		if (textWidth <= maxWidth) {
+			context.drawTextWithShadow(textRenderer, text, x, y, color);
+			return;
+		}
+		long now = System.currentTimeMillis();
+		int travel = textWidth + maxWidth + 20;
+		int offset = (int) ((now / 30L) % travel);
+		int drawX = x - offset;
+		context.enableScissor(x, y - 2, x + maxWidth, y + textRenderer.fontHeight + 2);
+		context.drawTextWithShadow(textRenderer, text, drawX, y, color);
+		context.drawTextWithShadow(textRenderer, text, drawX + travel, y, color);
+		context.disableScissor();
+	}
+
+	private void maybeLoadMore() {
+		if (loading || loadingMore || !searchHasMore || searchQuery.isBlank() || showingPlaylistTracks) {
+			return;
+		}
+		if (showPlaylists && playlistList != null) {
+			double maxScroll = playlistList.getMaxScrollAmount();
+			double currentScroll = playlistList.getScrollAmountValue();
+			if (maxScroll - currentScroll <= LIST_ITEM_HEIGHT * 2) {
+				loadMoreResults();
+			}
+		} else if (trackList != null) {
+			double maxScroll = trackList.getMaxScrollAmount();
+			double currentScroll = trackList.getScrollAmountValue();
+			if (maxScroll - currentScroll <= LIST_ITEM_HEIGHT * 2) {
+				loadMoreResults();
+			}
+		}
+	}
+
+	private void loadMoreResults() {
+		if (backend == null || loading || loadingMore || !searchHasMore || searchQuery.isBlank()) {
+			return;
+		}
+		loadingMore = true;
+		int nextOffset = searchOffset + searchLimit;
+		final boolean playlistSearch = showPlaylists;
+		final ServiceType service = currentService;
+		CompletableFuture<SearchResult> future = playlistSearch
+			? backend.searchPlaylists(service, searchQuery, nextOffset, searchLimit)
+			: backend.searchTracks(service, searchQuery, nextOffset, searchLimit);
+		future.whenComplete((result, error) -> {
+			if (client == null) {
+				return;
+			}
+			client.execute(() -> {
+				loadingMore = false;
+				if (error != null || result == null) {
+					searchHasMore = false;
+					DebugLog.error("Search load more failed", error);
+					return;
+				}
+				int added;
+				if (playlistSearch) {
+					added = result.playlists().size();
+					if (added > 0) {
+						playlistResults.addAll(result.playlists());
+						if (playlistList != null) {
+							playlistList.setPlaylists(playlistResults, true);
+						}
+					}
+				} else {
+					added = result.tracks().size();
+					if (added > 0) {
+						trackResults.addAll(result.tracks());
+						if (trackList != null) {
+							trackList.setTracks(trackResults, true);
+						}
+					}
+				}
+				if (added > 0) {
+					searchOffset = nextOffset;
+				}
+				searchHasMore = added >= searchLimit;
+				if (!statusMessage.isBlank()) {
+					statusMessage = (playlistSearch ? "Playlists: " : "Tracks: ")
+						+ (playlistSearch ? playlistResults.size() : trackResults.size());
+				}
+			});
+		});
+	}
+
 	private void persistConfig() {
 		if (config == null) {
 			return;
 		}
 		config.lastService = currentService.getId();
 		NoverplayConfigManager.save();
+	}
+
+	private NoverPlayClient.ScreenState buildState() {
+		NoverPlayClient.ScreenState state = new NoverPlayClient.ScreenState();
+		state.query = searchField != null ? searchField.getText() : searchQuery;
+		state.showPlaylists = showPlaylists;
+		state.showingPlaylistTracks = showingPlaylistTracks;
+		state.statusMessage = statusMessage == null ? "" : statusMessage;
+		state.searchOffset = searchOffset;
+		state.searchLimit = searchLimit;
+		state.searchHasMore = searchHasMore;
+		state.trackScroll = trackList != null ? trackList.getScrollAmountValue() : 0.0;
+		state.playlistScroll = playlistList != null ? playlistList.getScrollAmountValue() : 0.0;
+		state.currentPlaylist = currentPlaylist;
+		state.trackResults = new ArrayList<>(trackResults);
+		state.playlistResults = new ArrayList<>(playlistResults);
+		state.playlistTracks = new ArrayList<>(playlistTracks);
+		return state;
+	}
+
+	private void applyBlurIfPossible() {
+		if (client == null || client.gameRenderer == null) {
+			return;
+		}
+		Object renderer = client.gameRenderer;
+		try {
+			java.lang.reflect.Method method = renderer.getClass().getMethod("renderBlur", float.class);
+			method.invoke(renderer, 0.5f);
+			return;
+		} catch (ReflectiveOperationException ignored) {
+		}
+		try {
+			java.lang.reflect.Method method = renderer.getClass().getMethod("renderBlur");
+			method.invoke(renderer);
+		} catch (ReflectiveOperationException ignored) {
+		}
+	}
+
+	private void openExternalLink(String url) {
+		try {
+			Util.getOperatingSystem().open(URI.create(url));
+		} catch (Exception ex) {
+			DebugLog.error("Failed to open link " + url, ex);
+		}
 	}
 
 	private String buildMetaLine(TrackInfo track, PlayerState state) {

@@ -23,12 +23,20 @@ public abstract class NoverplaySliderWidget extends SliderWidget {
 	public void onClick(double mouseX, double mouseY) {
 		dragging = true;
 		super.onClick(mouseX, mouseY);
+		applyValue();
+	}
+
+	@Override
+	protected void onDrag(double mouseX, double mouseY, double deltaX, double deltaY) {
+		super.onDrag(mouseX, mouseY, deltaX, deltaY);
+		applyValue();
 	}
 
 	@Override
 	public void onRelease(double mouseX, double mouseY) {
 		dragging = false;
 		super.onRelease(mouseX, mouseY);
+		applyValue();
 	}
 
 	public boolean isDragging() {
