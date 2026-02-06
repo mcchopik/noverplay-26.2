@@ -1,15 +1,9 @@
 package dev.noverplay.music.client.util;
 
-import dev.noverplay.music.NoverPlay;
-
-import java.io.IOException;
 import java.io.PrintWriter;
 import java.io.StringWriter;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.nio.file.StandardOpenOption;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
@@ -37,7 +31,6 @@ public final class DebugLog {
 		logPath = resolveLogPath();
 		maxBodyChars = Integer.getInteger("noverplay.log.maxBody", DEFAULT_MAX_BODY);
 		previewChars = Integer.getInteger("noverplay.log.preview", DEFAULT_PREVIEW);
-		write("INFO", "Debug log started: " + logPath, null);
 	}
 
 	public static Path getLogPath() {
@@ -89,6 +82,10 @@ public final class DebugLog {
 
 	private static void write(String level, String message, Throwable error) {
 		init();
+		// Disabled by default: enable only with -Dnoverplay.log.file.enabled=true
+		if (!Boolean.getBoolean("noverplay.log.file.enabled")) {
+			return;
+		}
 		String timestamp = LocalDateTime.now().format(TIMESTAMP);
 		String thread = Thread.currentThread().getName();
 		StringBuilder builder = new StringBuilder(256);
@@ -101,20 +98,6 @@ public final class DebugLog {
 			builder.append(stackTrace(error));
 		}
 		String line = builder.toString() + System.lineSeparator();
-		synchronized (DebugLog.class) {
-			try {
-				Files.writeString(
-					logPath,
-					line,
-					StandardCharsets.UTF_8,
-					StandardOpenOption.CREATE,
-					StandardOpenOption.WRITE,
-					StandardOpenOption.APPEND
-				);
-			} catch (IOException e) {
-				NoverPlay.LOGGER.warn("Failed to write debug log", e);
-			}
-		}
 	}
 
 	private static String stackTrace(Throwable error) {
