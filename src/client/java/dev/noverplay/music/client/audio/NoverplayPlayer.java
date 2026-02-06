@@ -12,9 +12,12 @@ import com.sedmelluq.discord.lavaplayer.source.AudioSourceManagers;
 import com.sedmelluq.discord.lavaplayer.tools.JsonBrowser;
 import dev.lavalink.youtube.AllClientsFailedException;
 import dev.lavalink.youtube.YoutubeAudioSourceManager;
+import dev.lavalink.youtube.YoutubeSourceOptions;
+import dev.lavalink.youtube.clients.AndroidMusic;
 import dev.lavalink.youtube.clients.AndroidVr;
-import dev.lavalink.youtube.clients.Music;
-import dev.lavalink.youtube.clients.TvHtml5Embedded;
+import dev.lavalink.youtube.clients.ClientOptions;
+import dev.lavalink.youtube.clients.Ios;
+import dev.lavalink.youtube.clients.MWeb;
 import dev.lavalink.youtube.clients.Web;
 import dev.lavalink.youtube.clients.WebEmbedded;
 import dev.lavalink.youtube.clients.skeleton.Client;
@@ -45,6 +48,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 public class NoverplayPlayer {
 	private static final int FRAME_BUFFER_MS = 200;
+	private static final long YOUTUBE_STREAM_RETRY_THRESHOLD_MS = 15000L;
 	private static final AtomicBoolean LOGIN_HINT_SHOWN = new AtomicBoolean(false);
 	private static final long DEFAULT_OAUTH_POLL_INTERVAL_MS = 5000L;
 	private final AudioPlayerManager playerManager;
@@ -85,6 +89,7 @@ public class NoverplayPlayer {
 	private void setupPlayerManager(NoverplayConfig config) {
 		playerManager.setFrameBufferDuration(FRAME_BUFFER_MS);
 		playerManager.setPlayerCleanupThreshold(Long.MAX_VALUE);
+		dev.lavalink.youtube.track.YoutubeAudioTrack.BAD_STREAM_POSITION_THRESHOLD_MS = YOUTUBE_STREAM_RETRY_THRESHOLD_MS;
 
 		playerManager.getConfiguration().setResamplingQuality(ResamplingQuality.HIGH);
 		playerManager.getConfiguration().setOpusEncodingQuality(10);
@@ -113,23 +118,40 @@ public class NoverplayPlayer {
 			youtube.useOauth2(token, true);
 			DebugLog.info("YouTube OAuth refresh token applied");
 		} else {
-			DebugLog.warn("YouTube OAuth refresh token missing; start device flow from GUI.");
+			DebugLog.warn("YouTube OAuth refresh token missing.");
 		}
 	}
 
 	private YoutubeAudioSourceManager buildYoutubeSource(NoverplayConfig config) {
 		List<Client> clients = new ArrayList<>();
 		boolean oauthEnabled = config != null && config.youtubeOauthEnabled;
+		YoutubeSourceOptions options = new YoutubeSourceOptions();
 
-		if (oauthEnabled) {
-			clients.add(new TvHtml5Embedded());
+		if (config != null) {
+			String cipherUrl = trimToNull(config.youtubeCipherUrl);
+			if (cipherUrl != null) {
+				String cipherPassword = trimToNull(config.youtubeCipherPassword);
+				String cipherUserAgent = trimToNull(config.youtubeCipherUserAgent);
+				options.setRemoteCipher(cipherUrl, cipherPassword, cipherUserAgent);
+				DebugLog.info("YouTube remote cipher configured");
+			}
 		}
-		clients.add(new WebEmbedded());
-		clients.add(new Web());
-		clients.add(new AndroidVr());
-		clients.add(new Music());
 
-		YoutubeAudioSourceManager youtube = new YoutubeAudioSourceManager(clients.toArray(new Client[0]));
+		// Metadata loading and playback use separate client groups.
+		// This keeps URL resolution stable while preferring non-script playback clients first.
+		ClientOptions metadataOnly = metadataClientOptions();
+		clients.add(new Web(metadataOnly.copy()));
+		clients.add(new WebEmbedded(metadataOnly.copy()));
+		clients.add(new MWeb(metadataOnly.copy()));
+
+		ClientOptions playbackOnly = playbackClientOptions();
+		clients.add(new Ios(playbackOnly.copy()));
+		clients.add(new AndroidVr(playbackOnly.copy()));
+		clients.add(new AndroidMusic(playbackOnly.copy()));
+		clients.add(new Web(playbackOnly.copy()));
+		clients.add(new WebEmbedded(playbackOnly.copy()));
+
+		YoutubeAudioSourceManager youtube = new YoutubeAudioSourceManager(options, clients.toArray(new Client[0]));
 
 		if (config != null) {
 			String poToken = trimToNull(config.youtubePoToken);
@@ -145,11 +167,23 @@ public class NoverplayPlayer {
 				youtube.useOauth2(refreshToken, true);
 				DebugLog.info("YouTube OAuth refresh token configured");
 			} else if (oauthEnabled) {
-				DebugLog.warn("YouTube OAuth enabled without refresh token; use the GUI login button.");
+				DebugLog.warn("YouTube OAuth enabled without refresh token; add token in noverplay config.");
 			}
 		}
 
 		return youtube;
+	}
+
+	private ClientOptions metadataClientOptions() {
+		ClientOptions options = ClientOptions.DEFAULT.copy();
+		options.setPlayback(false);
+		return options;
+	}
+
+	private ClientOptions playbackClientOptions() {
+		ClientOptions options = ClientOptions.DEFAULT.copy();
+		options.setSearching(false);
+		return options;
 	}
 
 	public YoutubeOauthDevice requestYoutubeOauthDeviceCode() {
@@ -427,8 +461,7 @@ public class NoverplayPlayer {
 			return;
 		}
 		DebugLog.warn("YouTube requires login for playback.");
-		DebugLog.warn("Enable OAuth and use the GUI 'YT Login' button to link an account.");
-		DebugLog.warn("If needed, enter the shown code in the browser; refresh token is saved automatically.");
+		DebugLog.warn("Set OAuth fields in noverplay config (refresh token / PO token / visitor data).");
 	}
 
 	private boolean isLoginRequired(Throwable error) {

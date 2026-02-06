@@ -7,4 +7,7 @@ public class NoverplayConfig {
 	public String youtubeRefreshToken = "";
 	public String youtubePoToken = "";
 	public String youtubeVisitorData = "";
+	public String youtubeCipherUrl = "";
+	public String youtubeCipherPassword = "";
+	public String youtubeCipherUserAgent = "";
 }
