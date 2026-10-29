@@ -1,42 +1,38 @@
 package dev.noverplay.music.client.screen.widget;
 
-import net.minecraft.client.gui.widget.SliderWidget;
-import net.minecraft.text.Text;
-import net.minecraft.util.math.MathHelper;
+import net.minecraft.client.gui.components.AbstractSliderButton;
+import net.minecraft.client.input.MouseButtonEvent;
+import net.minecraft.network.chat.Component;
 
-public abstract class NoverplaySliderWidget extends SliderWidget {
+public abstract class NoverplaySliderWidget extends AbstractSliderButton {
 	private boolean dragging;
 	private boolean suppressApply;
 
-	protected NoverplaySliderWidget(int x, int y, int width, int height, Text message, double value) {
+	protected NoverplaySliderWidget(int x, int y, int width, int height, Component message, double value) {
 		super(x, y, width, height, message, value);
 	}
 
 	public void setValueSilently(double value) {
 		suppressApply = true;
-		this.value = MathHelper.clamp(value, 0.0, 1.0);
-		updateMessage();
+		setValue(value);
 		suppressApply = false;
 	}
 
 	@Override
-	public void onClick(double mouseX, double mouseY) {
+	public void onClick(MouseButtonEvent event, boolean doubleClick) {
 		dragging = true;
-		super.onClick(mouseX, mouseY);
-		applyValue();
+		super.onClick(event, doubleClick);
 	}
 
 	@Override
-	protected void onDrag(double mouseX, double mouseY, double deltaX, double deltaY) {
-		super.onDrag(mouseX, mouseY, deltaX, deltaY);
-		applyValue();
+	protected void onDrag(MouseButtonEvent event, double deltaX, double deltaY) {
+		super.onDrag(event, deltaX, deltaY);
 	}
 
 	@Override
-	public void onRelease(double mouseX, double mouseY) {
+	public void onRelease(MouseButtonEvent event) {
+		super.onRelease(event);
 		dragging = false;
-		super.onRelease(mouseX, mouseY);
-		applyValue();
 	}
 
 	public boolean isDragging() {

@@ -10,17 +10,20 @@ import dev.noverplay.music.client.service.NoverplayBackend;
 import dev.noverplay.music.client.util.DebugLog;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
-import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gui.screen.Screen;
-import net.minecraft.client.option.KeyBinding;
-import net.minecraft.client.util.InputUtil;
+import net.fabricmc.fabric.api.client.keymapping.v1.KeyMappingHelper;
+import net.minecraft.client.KeyMapping;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.resources.Identifier;
 import org.lwjgl.glfw.GLFW;
 
 public class NoverPlayClient implements ClientModInitializer {
 	private static NoverplayBackend backend;
 	private static NoverplayPlayer player;
-	private static KeyBinding openKeybind;
+	private static final KeyMapping.Category KEY_CATEGORY = KeyMapping.Category.register(
+		Identifier.fromNamespaceAndPath(NoverPlay.MOD_ID, "main")
+	);
+	private static KeyMapping openKeybind;
 	private static ScreenState lastScreenState;
 
 	public static NoverplayBackend getBackend() {
@@ -39,12 +42,12 @@ public class NoverPlayClient implements ClientModInitializer {
 		return lastScreenState;
 	}
 
-	public static void openNoverplayScreen(MinecraftClient client) {
-		if (client == null || client.currentScreen instanceof NoverplayScreen) {
+	public static void openNoverplayScreen(Minecraft client) {
+		if (client == null || client.gui.screen() instanceof NoverplayScreen) {
 			return;
 		}
-		Screen parent = client.currentScreen;
-		client.setScreen(new NoverplayScreen(parent));
+		Screen parent = client.gui.screen();
+		client.gui.setScreen(new NoverplayScreen(parent));
 	}
 
 	@Override
@@ -59,16 +62,15 @@ public class NoverPlayClient implements ClientModInitializer {
 		player = new NoverplayPlayer(config);
 		backend = new NoverplayBackend(player.getPlayerManager());
 		player.setResolver(backend);
-		openKeybind = KeyBindingHelper.registerKeyBinding(
-			new KeyBinding(
+		openKeybind = KeyMappingHelper.registerKeyMapping(
+			new KeyMapping(
 				"key.noverplay.open",
-				InputUtil.Type.KEYSYM,
 				GLFW.GLFW_KEY_P,
-				"key.categories.noverplay"
+				KEY_CATEGORY
 			)
 		);
 		ClientTickEvents.END_CLIENT_TICK.register(client -> {
-			while (openKeybind.wasPressed()) {
+			while (openKeybind.consumeClick()) {
 				openNoverplayScreen(client);
 			}
 		});

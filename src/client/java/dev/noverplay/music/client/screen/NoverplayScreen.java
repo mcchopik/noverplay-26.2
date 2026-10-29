@@ -17,12 +17,13 @@ import dev.noverplay.music.client.screen.widget.TrackListWidget;
 import dev.noverplay.music.client.widget.IconLinkButton;
 import dev.noverplay.music.client.service.NoverplayBackend;
 import dev.noverplay.music.client.util.DebugLog;
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.gui.screen.Screen;
-import net.minecraft.client.gui.widget.ButtonWidget;
-import net.minecraft.client.gui.widget.TextFieldWidget;
-import net.minecraft.text.Text;
-import net.minecraft.util.Identifier;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.gui.components.EditBox;
+import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.input.KeyEvent;
+import net.minecraft.network.chat.Component;
+import net.minecraft.resources.Identifier;
 import net.minecraft.util.Util;
 import org.lwjgl.glfw.GLFW;
 
@@ -32,9 +33,8 @@ import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
 public class NoverplayScreen extends Screen {
-	private static final Identifier LOGO_TEXTURE = new Identifier(NoverPlay.MOD_ID, "textures/gui/noverplay_logo.png");
-	private static final Identifier TELEGRAM_TEXTURE = new Identifier(NoverPlay.MOD_ID, "textures/gui/telegram.png");
-	private static final int LOGO_TEXTURE_SIZE = 256;
+	private static final Identifier LOGO_TEXTURE = Identifier.fromNamespaceAndPath(NoverPlay.MOD_ID, "textures/gui/noverplay_logo.png");
+	private static final Identifier TELEGRAM_TEXTURE = Identifier.fromNamespaceAndPath(NoverPlay.MOD_ID, "textures/gui/telegram.png");
 	private static final String TELEGRAM_URL = "https://t.me/NoverPlay";
 
 	private static final int ROW_HEIGHT = 20;
@@ -59,14 +59,14 @@ public class NoverplayScreen extends Screen {
 	private int searchLimit = 50;
 	private boolean searchHasMore;
 
-	private TextFieldWidget searchField;
-	private ButtonWidget searchButton;
-	private ButtonWidget closeButton;
+	private EditBox searchField;
+	private Button searchButton;
+	private Button closeButton;
 	private IconLinkButton telegramButton;
 
-	private ButtonWidget tracksButton;
-	private ButtonWidget playlistsButton;
-	private ButtonWidget backButton;
+	private Button tracksButton;
+	private Button playlistsButton;
+	private Button backButton;
 
 
 	private TrackListWidget trackList;
@@ -74,9 +74,9 @@ public class NoverplayScreen extends Screen {
 	private boolean trackListAdded;
 	private boolean playlistListAdded;
 
-	private ButtonWidget prevButton;
-	private ButtonWidget playPauseButton;
-	private ButtonWidget nextButton;
+	private Button prevButton;
+	private Button playPauseButton;
+	private Button nextButton;
 
 	private NoverplaySliderWidget progressSlider;
 	private NoverplaySliderWidget volumeSlider;
@@ -108,18 +108,14 @@ public class NoverplayScreen extends Screen {
 	private int controlsY;
 	private int volumeLabelY;
 	private int volumeSliderY;
-	private int lastMouseX;
-	private int lastMouseY;
-	private float lastDelta;
-
 	public NoverplayScreen(Screen parent) {
-		super(Text.literal("Noverplay"));
+		super(Component.literal("Noverplay"));
 		this.parent = parent;
 	}
 
 	@Override
 	protected void init() {
-		if (client == null) {
+		if (minecraft == null) {
 			return;
 		}
 		DebugLog.info("Screen init start width=" + width + " height=" + height);
@@ -146,9 +142,9 @@ public class NoverplayScreen extends Screen {
 			playlistTracks.addAll(saved.playlistTracks == null ? List.of() : saved.playlistTracks);
 		}
 
-		String searchText = searchField != null ? searchField.getText() : searchQuery;
+		String searchText = searchField != null ? searchField.getValue() : searchQuery;
 
-		clearChildren();
+		clearWidgets();
 		trackListAdded = false;
 		playlistListAdded = false;
 
@@ -160,57 +156,54 @@ public class NoverplayScreen extends Screen {
 		int closeY = panelY + 6;
 		int iconX = panelX + panelWidth - iconSize - 8;
 		int closeX = iconX - closeWidth - 6;
-		telegramButton = new IconLinkButton(iconX, closeY, iconSize, TELEGRAM_TEXTURE, Text.literal("Telegram"), () ->
+		telegramButton = new IconLinkButton(iconX, closeY, iconSize, TELEGRAM_TEXTURE, Component.literal("Telegram"), () ->
 			openExternalLink(TELEGRAM_URL));
-		addDrawableChild(telegramButton);
-		closeButton = ButtonWidget.builder(Text.literal("Close"), button -> close())
-			.dimensions(closeX, closeY, closeWidth, closeHeight)
+		addRenderableWidget(telegramButton);
+		closeButton = Button.builder(Component.literal("Close"), button -> onClose())
+			.bounds(closeX, closeY, closeWidth, closeHeight)
 			.build();
-		addDrawableChild(closeButton);
+		addRenderableWidget(closeButton);
 
 		int searchButtonWidth = 72;
 		int searchFieldWidth = leftWidth - searchButtonWidth - ROW_GAP;
 		int searchY = contentTop;
-		searchField = new TextFieldWidget(textRenderer, leftX, searchY, searchFieldWidth, ROW_HEIGHT, Text.literal("Search"));
-		searchField.setText(searchText);
+		searchField = new EditBox(font, leftX, searchY, searchFieldWidth, ROW_HEIGHT, Component.literal("Search"));
+		searchField.setValue(searchText);
 		searchField.setMaxLength(256);
-		searchField.setPlaceholder(Text.literal("Search"));
-		searchField.setChangedListener(value ->
+		searchField.setHint(Component.literal("Search"));
+		searchField.setResponder(value ->
 			DebugLog.info("Search input changed len=" + value.length() + " value=" + DebugLog.preview(value)));
-		addDrawableChild(searchField);
+		addRenderableWidget(searchField);
 
-		searchButton = ButtonWidget.builder(Text.literal("Search"), button -> performSearch())
-			.dimensions(leftX + searchFieldWidth + ROW_GAP, searchY, searchButtonWidth, ROW_HEIGHT)
+		searchButton = Button.builder(Component.literal("Search"), button -> performSearch())
+			.bounds(leftX + searchFieldWidth + ROW_GAP, searchY, searchButtonWidth, ROW_HEIGHT)
 			.build();
-		addDrawableChild(searchButton);
+		addRenderableWidget(searchButton);
 
 		int modeY = searchY + ROW_HEIGHT + ROW_GAP;
 		int backWidth = 60;
 		int toggleWidth = Math.max(60, (leftWidth - backWidth - ROW_GAP * 2) / 2);
 		int backX = leftX + toggleWidth * 2 + ROW_GAP * 2;
-		tracksButton = ButtonWidget.builder(Text.literal("Tracks"), button -> setShowPlaylists(false))
-			.dimensions(leftX, modeY, toggleWidth, ROW_HEIGHT)
+		tracksButton = Button.builder(Component.literal("Tracks"), button -> setShowPlaylists(false))
+			.bounds(leftX, modeY, toggleWidth, ROW_HEIGHT)
 			.build();
-		playlistsButton = ButtonWidget.builder(Text.literal("Playlists"), button -> setShowPlaylists(true))
-			.dimensions(leftX + toggleWidth + ROW_GAP, modeY, toggleWidth, ROW_HEIGHT)
+		playlistsButton = Button.builder(Component.literal("Playlists"), button -> setShowPlaylists(true))
+			.bounds(leftX + toggleWidth + ROW_GAP, modeY, toggleWidth, ROW_HEIGHT)
 			.build();
-		backButton = ButtonWidget.builder(Text.literal("Back"), button -> exitPlaylistView())
-			.dimensions(backX, modeY, backWidth, ROW_HEIGHT)
+		backButton = Button.builder(Component.literal("Back"), button -> exitPlaylistView())
+			.bounds(backX, modeY, backWidth, ROW_HEIGHT)
 			.build();
-		addDrawableChild(tracksButton);
-		addDrawableChild(playlistsButton);
-		addDrawableChild(backButton);
+		addRenderableWidget(tracksButton);
+		addRenderableWidget(playlistsButton);
+		addRenderableWidget(backButton);
 
 		listHeaderY = modeY + ROW_HEIGHT + ROW_GAP;
-		statusY = listHeaderY + textRenderer.fontHeight + 2;
-		listY = statusY + textRenderer.fontHeight + ROW_GAP;
+		statusY = listHeaderY + font.lineHeight + 2;
+		listY = statusY + font.lineHeight + ROW_GAP;
 		listHeight = Math.max(60, contentBottom - listY);
 
-		trackList = new TrackListWidget(client, leftWidth, listHeight, listY, LIST_ITEM_HEIGHT, this::selectTrack);
-		trackList.updateSize(leftWidth, listHeight, listY, listY + listHeight);
-		trackList.setLeftPos(leftX);
-		trackList.setRenderBackground(false);
-		trackList.setRenderHorizontalShadows(false);
+		trackList = new TrackListWidget(minecraft, leftWidth, listHeight, listY, LIST_ITEM_HEIGHT, this::selectTrack);
+		trackList.setX(leftX);
 		if (showingPlaylistTracks) {
 			trackList.setTracks(playlistTracks);
 		} else {
@@ -220,11 +213,8 @@ public class NoverplayScreen extends Screen {
 			trackList.setScrollAmount(saved.trackScroll);
 		}
 
-		playlistList = new PlaylistListWidget(client, leftWidth, listHeight, listY, LIST_ITEM_HEIGHT, this::selectPlaylist);
-		playlistList.updateSize(leftWidth, listHeight, listY, listY + listHeight);
-		playlistList.setLeftPos(leftX);
-		playlistList.setRenderBackground(false);
-		playlistList.setRenderHorizontalShadows(false);
+		playlistList = new PlaylistListWidget(minecraft, leftWidth, listHeight, listY, LIST_ITEM_HEIGHT, this::selectPlaylist);
+		playlistList.setX(leftX);
 		playlistList.setPlaylists(playlistResults);
 		if (saved != null) {
 			playlistList.setScrollAmount(saved.playlistScroll);
@@ -236,18 +226,18 @@ public class NoverplayScreen extends Screen {
 		int controlWidth = rightWidth - rightPadding * 2;
 
 		nowPlayingY = contentTop + 4;
-		titleY = nowPlayingY + textRenderer.fontHeight + 2;
-		artistY = titleY + textRenderer.fontHeight + 2;
-		progressY = artistY + textRenderer.fontHeight + 6;
+		titleY = nowPlayingY + font.lineHeight + 2;
+		artistY = titleY + font.lineHeight + 2;
+		progressY = artistY + font.lineHeight + 6;
 		timeY = progressY + sliderHeight + 2;
-		controlsY = timeY + textRenderer.fontHeight + 6;
+		controlsY = timeY + font.lineHeight + 6;
 		volumeLabelY = controlsY + ROW_HEIGHT + 6;
-		volumeSliderY = volumeLabelY + textRenderer.fontHeight + 2;
+		volumeSliderY = volumeLabelY + font.lineHeight + 2;
 
-		progressSlider = new NoverplaySliderWidget(rightContentX, progressY, controlWidth, sliderHeight, Text.literal("Progress"), 0.0) {
+		progressSlider = new NoverplaySliderWidget(rightContentX, progressY, controlWidth, sliderHeight, Component.literal("Progress"), 0.0) {
 			@Override
 			protected void updateMessage() {
-				setMessage(Text.literal("Progress"));
+				setMessage(Component.literal("Progress"));
 			}
 
 			@Override
@@ -263,31 +253,31 @@ public class NoverplayScreen extends Screen {
 				player.seek(value * duration);
 			}
 		};
-		addDrawableChild(progressSlider);
+		addRenderableWidget(progressSlider);
 
 		int controlButtonWidth = (controlWidth - ROW_GAP * 2) / 3;
-		prevButton = ButtonWidget.builder(Text.literal("Prev"), button -> {
+		prevButton = Button.builder(Component.literal("Prev"), button -> {
 			if (player != null) {
 				player.previous();
 			}
-		}).dimensions(rightContentX, controlsY, controlButtonWidth, ROW_HEIGHT).build();
-		playPauseButton = ButtonWidget.builder(Text.literal("Play"), button -> togglePlayback())
-			.dimensions(rightContentX + controlButtonWidth + ROW_GAP, controlsY, controlButtonWidth, ROW_HEIGHT)
+		}).bounds(rightContentX, controlsY, controlButtonWidth, ROW_HEIGHT).build();
+		playPauseButton = Button.builder(Component.literal("Play"), button -> togglePlayback())
+			.bounds(rightContentX + controlButtonWidth + ROW_GAP, controlsY, controlButtonWidth, ROW_HEIGHT)
 			.build();
-		nextButton = ButtonWidget.builder(Text.literal("Next"), button -> {
+		nextButton = Button.builder(Component.literal("Next"), button -> {
 			if (player != null) {
 				player.next();
 			}
-		}).dimensions(rightContentX + (controlButtonWidth + ROW_GAP) * 2, controlsY, controlButtonWidth, ROW_HEIGHT).build();
-		addDrawableChild(prevButton);
-		addDrawableChild(playPauseButton);
-		addDrawableChild(nextButton);
+		}).bounds(rightContentX + (controlButtonWidth + ROW_GAP) * 2, controlsY, controlButtonWidth, ROW_HEIGHT).build();
+		addRenderableWidget(prevButton);
+		addRenderableWidget(playPauseButton);
+		addRenderableWidget(nextButton);
 
-		volumeSlider = new NoverplaySliderWidget(rightContentX, volumeSliderY, controlWidth, sliderHeight, Text.literal("Volume"), config.volume) {
+		volumeSlider = new NoverplaySliderWidget(rightContentX, volumeSliderY, controlWidth, sliderHeight, Component.literal("Volume"), config.volume) {
 			@Override
 			protected void updateMessage() {
 				int percent = (int) Math.round(value * 100.0);
-				setMessage(Text.literal("Volume " + percent + "%"));
+				setMessage(Component.literal("Volume " + percent + "%"));
 			}
 
 			@Override
@@ -300,7 +290,7 @@ public class NoverplayScreen extends Screen {
 				}
 			}
 		};
-		addDrawableChild(volumeSlider);
+		addRenderableWidget(volumeSlider);
 
 		updateModeButtons();
 		updateListVisibility();
@@ -309,40 +299,36 @@ public class NoverplayScreen extends Screen {
 	}
 
 	@Override
-	public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+	public boolean keyPressed(KeyEvent event) {
 		if (searchField != null && searchField.isFocused()
-			&& (keyCode == GLFW.GLFW_KEY_ENTER || keyCode == GLFW.GLFW_KEY_KP_ENTER || keyCode == GLFW.GLFW_KEY_SPACE)) {
+			&& (event.key() == GLFW.GLFW_KEY_ENTER || event.key() == GLFW.GLFW_KEY_KP_ENTER || event.key() == GLFW.GLFW_KEY_SPACE)) {
 			performSearch();
 			return true;
 		}
-		return super.keyPressed(keyCode, scanCode, modifiers);
+		return super.keyPressed(event);
 	}
 
 	@Override
-	public void close() {
+	public void onClose() {
 		NoverPlayClient.saveScreenState(buildState());
 		persistConfig();
-		if (client != null) {
-			client.setScreen(parent);
+		if (minecraft != null) {
+			minecraft.gui.setScreen(parent);
 		}
 	}
 
 	@Override
-	public void render(DrawContext context, int mouseX, int mouseY, float delta) {
-		lastMouseX = mouseX;
-		lastMouseY = mouseY;
-		lastDelta = delta;
-		drawBackground(context);
+	public void extractRenderState(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float delta) {
 		PlayerState state = player != null ? player.snapshot() : null;
 		updatePlaybackWidgets(state);
-		drawPanels(context, state);
+		drawPanels(graphics, state);
 		maybeLoadMore();
-		super.render(context, mouseX, mouseY, delta);
+		super.extractRenderState(graphics, mouseX, mouseY, delta);
 	}
 
 	@Override
-	public boolean mouseScrolled(double mouseX, double mouseY, double amount) {
-		boolean handled = super.mouseScrolled(mouseX, mouseY, amount);
+	public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
+		boolean handled = super.mouseScrolled(mouseX, mouseY, scrollX, scrollY);
 		if (handled) {
 			maybeLoadMore();
 		}
@@ -369,127 +355,60 @@ public class NoverplayScreen extends Screen {
 		contentBottom = panelY + panelHeight - PADDING;
 	}
 
-	private void drawBackground(DrawContext context) {
-		if (client != null && client.world != null) {
-			applyBlurIfPossible();
-			context.fill(0, 0, width, height, 0x88000000);
-			return;
-		}
-		renderParentBackground(context);
-		applyBlurIfPossible();
-		context.fill(0, 0, width, height, 0x66000000);
+	@Override
+	public void extractBackground(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float delta) {
+		super.extractBackground(graphics, mouseX, mouseY, delta);
+		graphics.fill(0, 0, width, height, minecraft != null && minecraft.level != null ? 0x88000000 : 0x66000000);
 	}
 
-	private void renderParentBackground(DrawContext context) {
-		if (parent == null || parent == this) {
-			return;
-		}
-		if (invokeParentMethod(context, "renderBackgroundTexture")) {
-			return;
-		}
-		if (invokeParentMethod(context, "renderPanorama")) {
-			return;
-		}
-		if (invokeParentMethod(context, "renderBackground")) {
-			return;
-		}
-	}
-
-	private boolean invokeParentMethod(DrawContext context, String name) {
-		java.lang.reflect.Method method = findDeclaredMethod(parent.getClass(), name, DrawContext.class);
-		if (method != null) {
-			try {
-				method.invoke(parent, context);
-				return true;
-			} catch (ReflectiveOperationException ignored) {
-			}
-		}
-		method = findDeclaredMethod(parent.getClass(), name, DrawContext.class, float.class);
-		if (method != null) {
-			try {
-				method.invoke(parent, context, lastDelta);
-				return true;
-			} catch (ReflectiveOperationException ignored) {
-			}
-		}
-		method = findDeclaredMethod(parent.getClass(), name, DrawContext.class, int.class, int.class, float.class);
-		if (method != null) {
-			try {
-				method.invoke(parent, context, lastMouseX, lastMouseY, lastDelta);
-				return true;
-			} catch (ReflectiveOperationException ignored) {
-			}
-		}
-		return false;
-	}
-
-	private java.lang.reflect.Method findDeclaredMethod(Class<?> type, String name, Class<?>... params) {
-		Class<?> current = type;
-		while (current != null) {
-			try {
-				java.lang.reflect.Method method = current.getDeclaredMethod(name, params);
-				method.setAccessible(true);
-				return method;
-			} catch (ReflectiveOperationException ignored) {
-			}
-			current = current.getSuperclass();
-		}
-		return null;
-	}
-
-	private void drawPanels(DrawContext context, PlayerState state) {
-		context.fill(panelX, panelY, panelX + panelWidth, panelY + panelHeight, 0xFF171B21);
-		context.fill(panelX, panelY, panelX + panelWidth, panelY + 28, 0xFF202733);
+	private void drawPanels(GuiGraphicsExtractor graphics, PlayerState state) {
+		graphics.fill(panelX, panelY, panelX + panelWidth, panelY + panelHeight, 0xFF171B21);
+		graphics.fill(panelX, panelY, panelX + panelWidth, panelY + 28, 0xFF202733);
 
 		int logoSize = 18;
 		int logoX = panelX + 8;
 		int logoY = panelY + 5;
-		context.getMatrices().push();
-		context.getMatrices().translate(logoX, logoY, 0);
-		float logoScale = (float) logoSize / (float) LOGO_TEXTURE_SIZE;
-		context.getMatrices().scale(logoScale, logoScale, 1.0f);
-		context.drawTexture(LOGO_TEXTURE, 0, 0, 0, 0, LOGO_TEXTURE_SIZE, LOGO_TEXTURE_SIZE, LOGO_TEXTURE_SIZE, LOGO_TEXTURE_SIZE);
-		context.getMatrices().pop();
-		context.drawTextWithShadow(textRenderer, "Noverplay", logoX + logoSize + 6, panelY + 9, 0xFFE6E8EC);
+		graphics.blit(LOGO_TEXTURE, logoX, logoY, logoX + logoSize, logoY + logoSize, 0.0f, 1.0f, 0.0f, 1.0f);
+		graphics.text(font, "Noverplay", logoX + logoSize + 6, panelY + 9, 0xFFE6E8EC, true);
 
-		context.fill(leftX - 2, listY - 2, leftX + leftWidth + 2, contentBottom, 0xFF12161B);
-		context.fill(rightX - 2, contentTop - 2, rightX + rightWidth + 2, contentBottom, 0xFF12161B);
+		graphics.fill(leftX - 2, listY - 2, leftX + leftWidth + 2, contentBottom, 0xFF12161B);
+		graphics.fill(rightX - 2, contentTop - 2, rightX + rightWidth + 2, contentBottom, 0xFF12161B);
 
 		String listTitle = showingPlaylistTracks && currentPlaylist != null
 			? "Playlist: " + currentPlaylist.title()
 			: (showPlaylists ? "Playlists" : "Tracks");
-		context.drawTextWithShadow(textRenderer, listTitle, leftX, listHeaderY, 0xFFC9CFD6);
+		graphics.text(font, listTitle, leftX, listHeaderY, 0xFFC9CFD6, true);
 		if (statusMessage != null && !statusMessage.isBlank()) {
 			int statusColor = statusMessage.toLowerCase().contains("error") || statusMessage.toLowerCase().contains("required")
 				? 0xFFBE7070
 				: 0xFF9AA3AE;
-			context.drawTextWithShadow(textRenderer, statusMessage, leftX, statusY, statusColor);
+			graphics.text(font, statusMessage, leftX, statusY, statusColor, true);
 		}
 
-		context.drawTextWithShadow(textRenderer, "Now Playing", rightX + 6, nowPlayingY, 0xFFC9CFD6);
+		graphics.text(font, "Now Playing", rightX + 6, nowPlayingY, 0xFFC9CFD6, true);
 		TrackInfo track = state != null ? state.track() : null;
 		String title = track != null && !track.title().isBlank() ? track.title() : "No track";
 		String meta = buildMetaLine(track, state);
 		int textX = rightX + 6;
 		int maxTextWidth = Math.max(0, rightWidth - 12);
-		drawMarqueeText(context, title, textX, titleY, maxTextWidth, 0xFFE6E8EC);
-		context.drawTextWithShadow(textRenderer, meta, textX, artistY, 0xFF9AA3AE);
+		drawMarqueeText(graphics, title, textX, titleY, maxTextWidth, 0xFFE6E8EC);
+		graphics.text(font, meta, textX, artistY, 0xFF9AA3AE, true);
 
 		int position = state != null ? state.positionSeconds() : 0;
 		int duration = state != null ? state.durationSeconds() : 0;
 		String positionText = formatTime(position);
 		String durationText = formatTime(duration);
-		context.drawTextWithShadow(textRenderer, positionText, rightX + 6, timeY, 0xFF8B94A0);
-		int durationWidth = textRenderer.getWidth(durationText);
-		context.drawTextWithShadow(textRenderer, durationText, rightX + rightWidth - durationWidth - 6, timeY, 0xFF8B94A0);
+		graphics.text(font, positionText, rightX + 6, timeY, 0xFF8B94A0, true);
+		int durationWidth = font.width(durationText);
+		graphics.text(font, durationText, rightX + rightWidth - durationWidth - 6, timeY, 0xFF8B94A0, true);
 
-		context.drawTextWithShadow(textRenderer, "Volume", rightX + 6, volumeLabelY, 0xFF9AA3AE);
+		graphics.text(font, "Volume", rightX + 6, volumeLabelY, 0xFF9AA3AE, true);
 	}
 
 	private void updatePlaybackWidgets(PlayerState state) {
 		if (playPauseButton != null) {
 			String label = state != null && state.playing() ? "Pause" : "Play";
-			playPauseButton.setMessage(Text.literal(label));
+			playPauseButton.setMessage(Component.literal(label));
 		}
 		if (nextButton != null && state != null) {
 			nextButton.active = state.queue() != null && !state.queue().isEmpty();
@@ -508,7 +427,7 @@ public class NoverplayScreen extends Screen {
 		if (backend == null || loading) {
 			return;
 		}
-		String query = searchField != null ? searchField.getText().trim() : "";
+		String query = searchField != null ? searchField.getValue().trim() : "";
 		if (query.isBlank()) {
 			statusMessage = "Enter a search query";
 			DebugLog.warn("Search blocked: empty query");
@@ -532,10 +451,10 @@ public class NoverplayScreen extends Screen {
 			? backend.searchPlaylists(service, query, searchOffset, searchLimit)
 			: backend.searchTracks(service, query, searchOffset, searchLimit);
 		future.whenComplete((result, error) -> {
-			if (client == null) {
+			if (minecraft == null) {
 				return;
 			}
-			client.execute(() -> {
+			minecraft.execute(() -> {
 				loading = false;
 				refreshLoadingState();
 				if (error != null || result == null) {
@@ -611,10 +530,10 @@ public class NoverplayScreen extends Screen {
 		final ServiceType service = playlist.service();
 		CompletableFuture<PlaylistTracksResult> future = backend.loadPlaylist(service, playlist.playlistId(), 0, 200);
 		future.whenComplete((result, error) -> {
-			if (client == null) {
+			if (minecraft == null) {
 				return;
 			}
-			client.execute(() -> {
+			minecraft.execute(() -> {
 				loading = false;
 				refreshLoadingState();
 				if (error != null || result == null) {
@@ -694,20 +613,20 @@ public class NoverplayScreen extends Screen {
 		boolean showTrackList = !showPlaylists || showingPlaylistTracks;
 		if (showTrackList) {
 			if (playlistListAdded && playlistList != null) {
-				remove(playlistList);
+				removeWidget(playlistList);
 				playlistListAdded = false;
 			}
 			if (!trackListAdded && trackList != null) {
-				addDrawableChild(trackList);
+				addRenderableWidget(trackList);
 				trackListAdded = true;
 			}
 		} else {
 			if (trackListAdded && trackList != null) {
-				remove(trackList);
+				removeWidget(trackList);
 				trackListAdded = false;
 			}
 			if (!playlistListAdded && playlistList != null) {
-				addDrawableChild(playlistList);
+				addRenderableWidget(playlistList);
 				playlistListAdded = true;
 			}
 		}
@@ -719,23 +638,23 @@ public class NoverplayScreen extends Screen {
 		}
 	}
 
-	private void drawMarqueeText(DrawContext context, String text, int x, int y, int maxWidth, int color) {
+	private void drawMarqueeText(GuiGraphicsExtractor graphics, String text, int x, int y, int maxWidth, int color) {
 		if (text == null) {
 			return;
 		}
-		int textWidth = textRenderer.getWidth(text);
+		int textWidth = font.width(text);
 		if (textWidth <= maxWidth) {
-			context.drawTextWithShadow(textRenderer, text, x, y, color);
+			graphics.text(font, text, x, y, color, true);
 			return;
 		}
 		long now = System.currentTimeMillis();
 		int travel = textWidth + maxWidth + 20;
 		int offset = (int) ((now / 30L) % travel);
 		int drawX = x - offset;
-		context.enableScissor(x, y - 2, x + maxWidth, y + textRenderer.fontHeight + 2);
-		context.drawTextWithShadow(textRenderer, text, drawX, y, color);
-		context.drawTextWithShadow(textRenderer, text, drawX + travel, y, color);
-		context.disableScissor();
+		graphics.enableScissor(x, y - 2, x + maxWidth, y + font.lineHeight + 2);
+		graphics.text(font, text, drawX, y, color, true);
+		graphics.text(font, text, drawX + travel, y, color, true);
+		graphics.disableScissor();
 	}
 
 	private void maybeLoadMore() {
@@ -769,10 +688,10 @@ public class NoverplayScreen extends Screen {
 			? backend.searchPlaylists(service, searchQuery, nextOffset, searchLimit)
 			: backend.searchTracks(service, searchQuery, nextOffset, searchLimit);
 		future.whenComplete((result, error) -> {
-			if (client == null) {
+			if (minecraft == null) {
 				return;
 			}
-			client.execute(() -> {
+			minecraft.execute(() -> {
 				loadingMore = false;
 				if (error != null || result == null) {
 					searchHasMore = false;
@@ -819,7 +738,7 @@ public class NoverplayScreen extends Screen {
 
 	private NoverPlayClient.ScreenState buildState() {
 		NoverPlayClient.ScreenState state = new NoverPlayClient.ScreenState();
-		state.query = searchField != null ? searchField.getText() : searchQuery;
+		state.query = searchField != null ? searchField.getValue() : searchQuery;
 		state.showPlaylists = showPlaylists;
 		state.showingPlaylistTracks = showingPlaylistTracks;
 		state.statusMessage = statusMessage == null ? "" : statusMessage;
@@ -835,27 +754,9 @@ public class NoverplayScreen extends Screen {
 		return state;
 	}
 
-	private void applyBlurIfPossible() {
-		if (client == null || client.gameRenderer == null) {
-			return;
-		}
-		Object renderer = client.gameRenderer;
-		try {
-			java.lang.reflect.Method method = renderer.getClass().getMethod("renderBlur", float.class);
-			method.invoke(renderer, 0.5f);
-			return;
-		} catch (ReflectiveOperationException ignored) {
-		}
-		try {
-			java.lang.reflect.Method method = renderer.getClass().getMethod("renderBlur");
-			method.invoke(renderer);
-		} catch (ReflectiveOperationException ignored) {
-		}
-	}
-
 	private void openExternalLink(String url) {
 		try {
-			Util.getOperatingSystem().open(URI.create(url));
+			Util.getPlatform().openUri(URI.create(url));
 		} catch (Exception ex) {
 			DebugLog.error("Failed to open link " + url, ex);
 		}

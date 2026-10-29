@@ -2,24 +2,23 @@ package dev.noverplay.music.client.screen.widget;
 
 import dev.noverplay.music.client.model.TrackInfo;
 import dev.noverplay.music.client.util.DebugLog;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.gui.screen.narration.NarrationPart;
-import net.minecraft.client.gui.screen.narration.NarrationMessageBuilder;
-import net.minecraft.client.gui.widget.EntryListWidget;
-import net.minecraft.text.Text;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.gui.components.ObjectSelectionList;
+import net.minecraft.client.input.MouseButtonEvent;
+import net.minecraft.network.chat.Component;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.BiConsumer;
 
-public class TrackListWidget extends EntryListWidget<TrackListWidget.TrackEntry> {
+public class TrackListWidget extends ObjectSelectionList<TrackListWidget.TrackEntry> {
 	private final List<TrackInfo> tracks = new ArrayList<>();
 	private final BiConsumer<TrackInfo, Integer> onSelect;
 
-	public TrackListWidget(MinecraftClient client, int width, int height, int top, int itemHeight,
+	public TrackListWidget(Minecraft minecraft, int width, int height, int top, int itemHeight,
 						   BiConsumer<TrackInfo, Integer> onSelect) {
-		super(client, width, height, top, top + height, itemHeight);
+		super(minecraft, width, height, top, itemHeight);
 		this.onSelect = onSelect;
 	}
 
@@ -28,7 +27,7 @@ public class TrackListWidget extends EntryListWidget<TrackListWidget.TrackEntry>
 	}
 
 	public void setTracks(List<TrackInfo> items, boolean keepScroll) {
-		double scroll = getScrollAmount();
+		double scroll = scrollAmount();
 		tracks.clear();
 		clearEntries();
 		if (items != null) {
@@ -65,26 +64,21 @@ public class TrackListWidget extends EntryListWidget<TrackListWidget.TrackEntry>
 	}
 
 	public double getScrollAmountValue() {
-		return getScrollAmount();
+		return scrollAmount();
 	}
 
 	public double getMaxScrollAmount() {
-		return getMaxScroll();
+		return maxScrollAmount();
 	}
 
 	@Override
-	protected int getScrollbarPositionX() {
+	protected int scrollBarX() {
 		return getRowRight() - 6;
 	}
 
 	@Override
 	public int getRowWidth() {
-		return width - 12;
-	}
-
-	@Override
-	public void appendNarrations(NarrationMessageBuilder builder) {
-		builder.put(NarrationPart.TITLE, Text.literal("Tracks"));
+		return getWidth() - 12;
 	}
 
 	private String trimWithEllipsis(String text, int maxWidth) {
@@ -92,18 +86,18 @@ public class TrackListWidget extends EntryListWidget<TrackListWidget.TrackEntry>
 			return "";
 		}
 		int safeWidth = Math.max(0, maxWidth);
-		if (client.textRenderer.getWidth(text) <= safeWidth) {
+		if (minecraft.font.width(text) <= safeWidth) {
 			return text;
 		}
-		int ellipsisWidth = client.textRenderer.getWidth("...");
+		int ellipsisWidth = minecraft.font.width("...");
 		int available = Math.max(0, safeWidth - ellipsisWidth);
 		if (available <= 0) {
-			return client.textRenderer.trimToWidth(text, safeWidth);
+			return minecraft.font.plainSubstrByWidth(text, safeWidth);
 		}
-		return client.textRenderer.trimToWidth(text, available) + "...";
+		return minecraft.font.plainSubstrByWidth(text, available) + "...";
 	}
 
-	public class TrackEntry extends EntryListWidget.Entry<TrackEntry> {
+	public class TrackEntry extends ObjectSelectionList.Entry<TrackEntry> {
 		private final TrackInfo track;
 		private final int index;
 
@@ -113,9 +107,10 @@ public class TrackListWidget extends EntryListWidget<TrackListWidget.TrackEntry>
 		}
 
 		@Override
-		public void render(DrawContext context, int index, int y, int x, int entryWidth, int entryHeight,
-						   int mouseX, int mouseY, boolean hovered, float delta) {
-			int yPos = y;
+		public void extractContent(GuiGraphicsExtractor graphics, int mouseX, int mouseY, boolean hovered, float delta) {
+			int x = getContentX();
+			int yPos = getContentY();
+			int entryWidth = getContentWidth();
 			int titleColor = 0xFFFFFFFF;
 			int metaColor = 0xFFAAAAAA;
 			String title = track.title();
@@ -127,23 +122,28 @@ public class TrackListWidget extends EntryListWidget<TrackListWidget.TrackEntry>
 				artist = "Unknown artist";
 			}
 			String duration = track.durationText();
-			int durationWidth = client.textRenderer.getWidth(duration);
+			int durationWidth = minecraft.font.width(duration);
 			int durationPad = 25;
 			int maxWidth = entryWidth - durationWidth - 15 - durationPad;
 			String titleText = trimWithEllipsis(title, maxWidth);
 			String artistText = trimWithEllipsis(artist, maxWidth);
-			context.drawTextWithShadow(client.textRenderer, titleText, x, yPos + 2, titleColor);
-			context.drawTextWithShadow(client.textRenderer, artistText, x, yPos + 14, metaColor);
-			context.drawTextWithShadow(client.textRenderer, duration, x + entryWidth - durationWidth - durationPad, yPos + 2, metaColor);
+			graphics.text(minecraft.font, titleText, x, yPos + 2, titleColor, true);
+			graphics.text(minecraft.font, artistText, x, yPos + 14, metaColor, true);
+			graphics.text(minecraft.font, duration, x + entryWidth - durationWidth - durationPad, yPos + 2, metaColor, true);
 		}
 
 		@Override
-		public boolean mouseClicked(double mouseX, double mouseY, int button) {
-			if (button == 0 && onSelect != null) {
+		public boolean mouseClicked(MouseButtonEvent event, boolean doubleClick) {
+			if (event.button() == 0 && onSelect != null) {
 				onSelect.accept(track, index);
 				return true;
 			}
 			return false;
+		}
+
+		@Override
+		public Component getNarration() {
+			return Component.literal(track.title() + " - " + track.artist());
 		}
 
 	}

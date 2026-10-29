@@ -2,24 +2,23 @@ package dev.noverplay.music.client.screen.widget;
 
 import dev.noverplay.music.client.model.PlaylistInfo;
 import dev.noverplay.music.client.util.DebugLog;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.gui.screen.narration.NarrationPart;
-import net.minecraft.client.gui.screen.narration.NarrationMessageBuilder;
-import net.minecraft.client.gui.widget.EntryListWidget;
-import net.minecraft.text.Text;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.gui.components.ObjectSelectionList;
+import net.minecraft.client.input.MouseButtonEvent;
+import net.minecraft.network.chat.Component;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.BiConsumer;
 
-public class PlaylistListWidget extends EntryListWidget<PlaylistListWidget.PlaylistEntry> {
+public class PlaylistListWidget extends ObjectSelectionList<PlaylistListWidget.PlaylistEntry> {
 	private final List<PlaylistInfo> playlists = new ArrayList<>();
 	private final BiConsumer<PlaylistInfo, Integer> onSelect;
 
-	public PlaylistListWidget(MinecraftClient client, int width, int height, int top, int itemHeight,
+	public PlaylistListWidget(Minecraft minecraft, int width, int height, int top, int itemHeight,
 							  BiConsumer<PlaylistInfo, Integer> onSelect) {
-		super(client, width, height, top, top + height, itemHeight);
+		super(minecraft, width, height, top, itemHeight);
 		this.onSelect = onSelect;
 	}
 
@@ -28,7 +27,7 @@ public class PlaylistListWidget extends EntryListWidget<PlaylistListWidget.Playl
 	}
 
 	public void setPlaylists(List<PlaylistInfo> items, boolean keepScroll) {
-		double scroll = getScrollAmount();
+		double scroll = scrollAmount();
 		playlists.clear();
 		clearEntries();
 		if (items != null) {
@@ -57,26 +56,21 @@ public class PlaylistListWidget extends EntryListWidget<PlaylistListWidget.Playl
 	}
 
 	public double getScrollAmountValue() {
-		return getScrollAmount();
+		return scrollAmount();
 	}
 
 	public double getMaxScrollAmount() {
-		return getMaxScroll();
+		return maxScrollAmount();
 	}
 
 	@Override
-	protected int getScrollbarPositionX() {
+	protected int scrollBarX() {
 		return getRowRight() - 6;
 	}
 
 	@Override
 	public int getRowWidth() {
-		return width - 12;
-	}
-
-	@Override
-	public void appendNarrations(NarrationMessageBuilder builder) {
-		builder.put(NarrationPart.TITLE, Text.literal("Playlists"));
+		return getWidth() - 12;
 	}
 
 	private String trimWithEllipsis(String text, int maxWidth) {
@@ -84,18 +78,18 @@ public class PlaylistListWidget extends EntryListWidget<PlaylistListWidget.Playl
 			return "";
 		}
 		int safeWidth = Math.max(0, maxWidth);
-		if (client.textRenderer.getWidth(text) <= safeWidth) {
+		if (minecraft.font.width(text) <= safeWidth) {
 			return text;
 		}
-		int ellipsisWidth = client.textRenderer.getWidth("...");
+		int ellipsisWidth = minecraft.font.width("...");
 		int available = Math.max(0, safeWidth - ellipsisWidth);
 		if (available <= 0) {
-			return client.textRenderer.trimToWidth(text, safeWidth);
+			return minecraft.font.plainSubstrByWidth(text, safeWidth);
 		}
-		return client.textRenderer.trimToWidth(text, available) + "...";
+		return minecraft.font.plainSubstrByWidth(text, available) + "...";
 	}
 
-	public class PlaylistEntry extends EntryListWidget.Entry<PlaylistEntry> {
+	public class PlaylistEntry extends ObjectSelectionList.Entry<PlaylistEntry> {
 		private final PlaylistInfo playlist;
 		private final int index;
 
@@ -105,9 +99,10 @@ public class PlaylistListWidget extends EntryListWidget<PlaylistListWidget.Playl
 		}
 
 		@Override
-		public void render(DrawContext context, int index, int y, int x, int entryWidth, int entryHeight,
-						   int mouseX, int mouseY, boolean hovered, float delta) {
-			int yPos = y;
+		public void extractContent(GuiGraphicsExtractor graphics, int mouseX, int mouseY, boolean hovered, float delta) {
+			int x = getContentX();
+			int yPos = getContentY();
+			int entryWidth = getContentWidth();
 			int titleColor = 0xFFFFFFFF;
 			int metaColor = 0xFFAAAAAA;
 			String title = playlist.title();
@@ -119,23 +114,28 @@ public class PlaylistListWidget extends EntryListWidget<PlaylistListWidget.Playl
 				author = "Unknown author";
 			}
 			String count = playlist.trackCount() > 0 ? playlist.trackCount() + " tracks" : "";
-			int countWidth = client.textRenderer.getWidth(count);
+			int countWidth = minecraft.font.width(count);
 			int countPad = 6;
 			int maxWidth = entryWidth - countWidth - 15;
 			String titleText = trimWithEllipsis(title, maxWidth);
 			String authorText = trimWithEllipsis(author, maxWidth);
-			context.drawTextWithShadow(client.textRenderer, titleText, x, yPos + 2, titleColor);
-			context.drawTextWithShadow(client.textRenderer, authorText, x, yPos + 14, metaColor);
-			context.drawTextWithShadow(client.textRenderer, count, x + entryWidth - countWidth - countPad, yPos + 2, metaColor);
+			graphics.text(minecraft.font, titleText, x, yPos + 2, titleColor, true);
+			graphics.text(minecraft.font, authorText, x, yPos + 14, metaColor, true);
+			graphics.text(minecraft.font, count, x + entryWidth - countWidth - countPad, yPos + 2, metaColor, true);
 		}
 
 		@Override
-		public boolean mouseClicked(double mouseX, double mouseY, int button) {
-			if (button == 0 && onSelect != null) {
+		public boolean mouseClicked(MouseButtonEvent event, boolean doubleClick) {
+			if (event.button() == 0 && onSelect != null) {
 				onSelect.accept(playlist, index);
 				return true;
 			}
 			return false;
+		}
+
+		@Override
+		public Component getNarration() {
+			return Component.literal(playlist.title() + " - " + playlist.author());
 		}
 	}
 }

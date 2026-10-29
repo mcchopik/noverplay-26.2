@@ -3,7 +3,7 @@
 	"package": "dev.noverplay.music.mixin.client",
 	"compatibilityLevel": "JAVA_25",
 	"client": [
-		"GameMenuScreenMixin",
+		"PauseScreenMixin",
 		"TitleScreenMixin"
 	],
 	"injectors": {
